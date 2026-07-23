@@ -60,24 +60,18 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         for key, value in request.query_params.items():
             args[key] = value
 
-        # 获取请求体
+        # 获取请求体（根据 Content-Type 分别处理，避免消费 body 导致路由层无法读取）
         if request.method in ["POST", "PUT", "PATCH"]:
+            content_type = request.headers.get("content-type", "")
             try:
-                body = await request.json()
-                args.update(body)
-            except json.JSONDecodeError:
-                try:
-                    body = await request.form()
-                    # args.update(body)
-                    for k, v in body.items():
-                        if hasattr(v, "filename"):  # 文件上传行为
-                            args[k] = v.filename
-                        elif isinstance(v, list) and v and hasattr(v[0], "filename"):
-                            args[k] = [file.filename for file in v]
-                        else:
-                            args[k] = v
-                except Exception:
-                    pass
+                if "application/json" in content_type:
+                    body = await request.json()
+                    args.update(body)
+                elif "multipart/form-data" in content_type:
+                    # 文件上传请求不读取 body，避免消费 ASGI receive 通道导致路由层无法获取文件
+                    args["_body_type"] = "multipart/form-data (file upload)"
+            except Exception:
+                pass
 
         return args
 

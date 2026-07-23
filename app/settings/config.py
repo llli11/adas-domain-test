@@ -20,75 +20,84 @@ class Settings(BaseSettings):
     PROJECT_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     BASE_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, os.pardir))
     LOGS_ROOT: str = os.path.join(BASE_DIR, "app/logs")
-    SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"  # openssl rand -hex 32
+    SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
-    TORTOISE_ORM: dict = {
-        "connections": {
-            # SQLite configuration
-            "sqlite": {
-                "engine": "tortoise.backends.sqlite",
-                "credentials": {"file_path": f"{BASE_DIR}/db.sqlite3"},  # Path to SQLite database file
-            },
-            # MySQL/MariaDB configuration
-            # Install with: tortoise-orm[asyncmy]
-            # "mysql": {
-            #     "engine": "tortoise.backends.mysql",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 3306,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-            # PostgreSQL configuration
-            # Install with: tortoise-orm[asyncpg]
-            # "postgres": {
-            #     "engine": "tortoise.backends.asyncpg",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 5432,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-            # MSSQL/Oracle configuration
-            # Install with: tortoise-orm[asyncodbc]
-            # "oracle": {
-            #     "engine": "tortoise.backends.asyncodbc",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 1433,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-            # SQLServer configuration
-            # Install with: tortoise-orm[asyncodbc]
-            # "sqlserver": {
-            #     "engine": "tortoise.backends.asyncodbc",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 1433,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-        },
-        "apps": {
-            "models": {
-                "models": ["app.models", "aerich.models"],
-                "default_connection": "sqlite",
-            },
-        },
-        "use_tz": False,  # Whether to use timezone-aware datetimes
-        "timezone": "Asia/Shanghai",  # Timezone setting
-    }
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
+
+    MYSQL_HOST: str = "localhost"
+    MYSQL_PORT: int = 3306
+    MYSQL_USER: str = "root"
+    MYSQL_PASSWORD: str = "root123456"
+    MYSQL_DATABASE: str = "mydb_local"
+    MYSQL_ROOT_PASSWORD: str = "root123456"
+
+    USE_SERVER: bool = False
+
+    SERVER_HOST: str = "localhost"
+    SERVER_PORT: int = 3306
+    SERVER_USER: str = "myuser"
+    SERVER_PASSWORD: str = "mypassword123456"
+    SERVER_DATABASE: str = "mydb_local"
+
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
+
+    model_config = {"env_file": ".env", "extra": "allow"}
+
+    @property
+    def db_host(self) -> str:
+        return self.MYSQL_HOST
+
+    @property
+    def db_port(self) -> int:
+        return self.MYSQL_PORT
+
+    @property
+    def db_user(self) -> str:
+        return self.MYSQL_USER
+
+    @property
+    def db_password(self) -> str:
+        return self.MYSQL_PASSWORD
+
+    @property
+    def db_database(self) -> str:
+        return self.MYSQL_DATABASE
+
+    @property
+    def TORTOISE_ORM(self) -> dict:
+        return {
+            "connections": {
+                "mysql": {
+                    "engine": "tortoise.backends.mysql",
+                    "credentials": {
+                        "host": self.db_host,
+                        "port": self.db_port,
+                        "user": self.db_user,
+                        "password": self.db_password,
+                        "database": self.db_database,
+                    },
+                },
+            },
+            "apps": {
+                "models": {
+                    "models": [
+                        "aerich.models",
+                        "app.models.admin",
+                        "app.models.ecu",
+                        "app.models.version_index",
+                        "app.models.tool",
+                        "app.models.vehicle",
+                        "app.models.user_feishu_config",
+                        "app.models.expense",
+                        "app.models.mapway",
+                        "app.models.contractor",
+                    ],
+                    "default_connection": "mysql",
+                },
+            },
+            "use_tz": False,
+            "timezone": "Asia/Shanghai",
+        }
 
 
 settings = Settings()

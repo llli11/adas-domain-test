@@ -76,7 +76,6 @@ test: ## Run the test suite
 .PHONY: clean-db
 clean-db: ## 删除migrations文件夹和db.sqlite3
 	find . -type d -name "migrations" -exec rm -rf {} +
-	rm -f db.sqlite3 db.sqlite3-shm db.sqlite3-wal
 
 .PHONY: migrate
 migrate: ## 运行aerich migrate命令生成迁移文件
