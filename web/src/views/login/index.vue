@@ -53,6 +53,7 @@
 </template>
 
 <script setup>
+import { useMessage } from 'naive-ui'
 import { lStorage, setToken } from '@/utils'
 import bgImg from '@/assets/images/login_bg.webp'
 import api from '@/api'
@@ -62,6 +63,7 @@ import { useI18n } from 'vue-i18n'
 const router = useRouter()
 const { query } = useRoute()
 const { t } = useI18n({ useScope: 'global' })
+const $message = useMessage()
 
 const loginInfo = ref({
   username: '',
@@ -101,7 +103,8 @@ async function handleLogin() {
       router.push('/')
     }
   } catch (e) {
-    console.error('login error', e.error)
+    console.error('login error', e)
+    $message.error(e?.message || '登录失败，请检查账号密码或网络连接')
   }
   loading.value = false
 }

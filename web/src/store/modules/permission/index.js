@@ -1,19 +1,52 @@
 import { defineStore } from 'pinia'
-import { basicRoutes, vueModules } from '@/router/routes'
+import { basicRoutes, asyncRoutes, vueModules } from '@/router/routes'
 import Layout from '@/layout/index.vue'
 import api from '@/api'
 
-// * 后端路由相关函数
-// 根据后端传来数据构建出前端路由
+function getComponent(componentPath) {
+  if (!componentPath) return null
+  
+  let comp = null
+  
+  // 方式1: /src/views/ecu/target.vue
+  comp = vueModules[`/src/views${componentPath}.vue`]
+  if (comp) return comp
+  
+  // 方式2: /src/views/ecu/target/index.vue
+  comp = vueModules[`/src/views${componentPath}/index.vue`]
+  if (comp) return comp
+  
+  // 方式3: /src/views/target/index.vue (去掉ecu前缀)
+  if (componentPath.startsWith('/ecu/')) {
+    const shortPath = componentPath.replace('/ecu', '')
+    comp = vueModules[`/src/views${shortPath}/index.vue`]
+    if (comp) return comp
+    comp = vueModules[`/src/views${shortPath}.vue`]
+    if (comp) return comp
+  }
+  
+  // 方式4: 完全去掉ecu，只保留最后的路径
+  const parts = componentPath.split('/')
+  const lastPart = parts[parts.length - 1]
+  comp = vueModules[`/src/views/target/index.vue`]
+  if (comp) return comp
+  comp = vueModules[`/src/views/target.vue`]
+  if (comp) return comp
+  
+  return comp
+}
 
 function buildRoutes(routes = []) {
   return routes.map((e) => {
+    // 处理动态路由参数 (:xxx)
+    const pathWithParams = e.path.includes(':') ? e.path : null
+    
     const route = {
       name: e.name,
       path: e.path,
       component: shallowRef(Layout),
       isHidden: e.is_hidden,
-      redirect: e.redirect,
+      redirect: e.redirect || (e.children && e.children.length > 0 ? e.children[0].path : ''),
       meta: {
         title: e.name,
         icon: e.icon,
@@ -23,26 +56,32 @@ function buildRoutes(routes = []) {
       children: [],
     }
 
+    // 如果是一级菜单且有动态子路由，添加完整路径
+    if (pathWithParams && e.children && e.children.length > 0) {
+      route.path = e.path  // 保持动态路由
+    }
+
     if (e.children && e.children.length > 0) {
-      // 有子菜单
-      route.children = e.children.map((e_child) => ({
-        name: e_child.name,
-        path: e_child.path,
-        component: vueModules[`/src/views${e_child.component}/index.vue`],
-        isHidden: e_child.is_hidden,
-        meta: {
-          title: e_child.name,
-          icon: e_child.icon,
-          order: e_child.order,
-          keepAlive: e_child.keepalive,
-        },
-      }))
+      route.children = e.children.map((e_child) => {
+        const childPath = e_child.path.includes(':') ? e_child.path : e_child.path
+        return {
+          name: e_child.name,
+          path: childPath,
+          component: getComponent(e_child.component),
+          isHidden: e_child.is_hidden,
+          meta: {
+            title: e_child.name,
+            icon: e_child.icon,
+            order: e_child.order,
+            keepAlive: e_child.keepalive,
+          },
+        }
+      })
     } else {
-      // 没有子菜单，创建一个默认的子路由
       route.children.push({
         name: `${e.name}Default`,
         path: '',
-        component: vueModules[`/src/views${e.component}/index.vue`],
+        component: getComponent(e.component),
         isHidden: true,
         meta: {
           title: e.name,
@@ -66,7 +105,7 @@ export const usePermissionStore = defineStore('permission', {
   },
   getters: {
     routes() {
-      return basicRoutes.concat(this.accessRoutes)
+      return basicRoutes.concat(asyncRoutes).concat(this.accessRoutes)
     },
     menus() {
       return this.routes.filter((route) => route.name && !route.isHidden)
@@ -77,8 +116,8 @@ export const usePermissionStore = defineStore('permission', {
   },
   actions: {
     async generateRoutes() {
-      const res = await api.getUserMenu() // 调用接口获取后端传来的菜单路由
-      this.accessRoutes = buildRoutes(res.data) // 处理成前端路由格式
+      const res = await api.getUserMenu()
+      this.accessRoutes = buildRoutes(res.data)
       return this.accessRoutes
     },
     async getAccessApis() {

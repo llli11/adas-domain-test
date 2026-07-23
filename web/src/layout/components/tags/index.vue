@@ -46,6 +46,7 @@ watch(
   () => {
     const { name, fullPath: path } = route
     const title = route.meta?.title
+if (route.meta?.noTag) return
     tagsStore.addTag({ name, path, title })
   },
   { immediate: true },

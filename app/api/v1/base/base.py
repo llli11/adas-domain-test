@@ -66,12 +66,20 @@ async def get_user_menu():
     res = []
     for parent_menu in parent_menus:
         parent_menu_dict = await parent_menu.to_dict()
-        parent_menu_dict["children"] = []
-        for menu in menus:
-            if menu.parent_id == parent_menu.id:
-                parent_menu_dict["children"].append(await menu.to_dict())
+        parent_menu_dict["children"] = await _build_children(parent_menu, menus)
         res.append(parent_menu_dict)
     return Success(data=res)
+
+
+async def _build_children(parent, all_menus):
+    """递归构建子菜单（支持三级及以上嵌套）"""
+    children = []
+    for menu in all_menus:
+        if menu.parent_id == parent.id:
+            child_dict = await menu.to_dict()
+            child_dict["children"] = await _build_children(menu, all_menus)
+            children.append(child_dict)
+    return children
 
 
 @router.get("/userapi", summary="查看用户API", dependencies=[DependAuth])
@@ -101,3 +109,8 @@ async def update_user_password(req_in: UpdatePassword):
     user.password = get_password_hash(req_in.new_password)
     await user.save()
     return Success(msg="修改成功")
+
+
+
+
+

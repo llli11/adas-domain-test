@@ -95,14 +95,16 @@ function getIcon(meta) {
 }
 
 function handleMenuSelect(key, item) {
+  if (!item) return
   if (isExternal(item.path)) {
     window.open(item.path)
+    return
+  }
+  const targetPath = item.path || (key ? router.resolve({ name: key }).path : '/')
+  if (targetPath === curRoute.path) {
+    appStore.reloadPage()
   } else {
-    if (item.path === curRoute.path) {
-      appStore.reloadPage()
-    } else {
-      router.push(item.path)
-    }
+    router.push(targetPath)
   }
 }
 </script>

@@ -116,6 +116,15 @@ export const basicRoutes = [
       title: '登录页',
     },
   },
+  {
+    name: 'QRContractor',
+    path: '/qr-contractor',
+    component: () => import('@/views/qr-contractor/index.vue'),
+    isHidden: true,
+    meta: {
+    title: '扫码登记',
+    },
+  },  
 ]
 
 export const NOT_FOUND_ROUTE = {
@@ -137,7 +146,7 @@ Object.keys(modules).forEach((key) => {
   asyncRoutes.push(modules[key].default)
 })
 
-// 加载 views 下每个模块的 index.vue 文件
-const vueModules = import.meta.glob('@/views/**/index.vue')
+// 加载 views 下所有 vue 文件
+const vueModules = import.meta.glob('@/views/**/*.vue')
 
 export { asyncRoutes, vueModules }
