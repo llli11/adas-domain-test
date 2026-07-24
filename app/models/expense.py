@@ -45,7 +45,7 @@ class ExpenseCode(BaseModel, TimestampMixin):
 
 class TestOrder(BaseModel, TimestampMixin):
     """试验单号"""
-    expense_code = fields.ForeignKeyField("models.ExpenseCode", related_name="test_orders", description="所属费用号")
+    expense_code = fields.ForeignKeyField("models.ExpenseCode", related_name="test_orders", null=True, description="所属费用号")
     test_order_no = fields.CharField(max_length=100, unique=True, description="试验单号", index=True)
     total_price = fields.DecimalField(max_digits=12, decimal_places=2, default=0, description="总金额")
     used_amount = fields.DecimalField(max_digits=12, decimal_places=2, default=0, description="已使用金额(实时)")

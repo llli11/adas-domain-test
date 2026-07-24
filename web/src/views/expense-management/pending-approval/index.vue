@@ -21,10 +21,10 @@ const columns = [
   { title: '工作地点', key: 'work_location', width: 120 },
   { title: '审批人', key: 'approver2', width: 100 },
   {
-    title: '操作', key: 'action', width: 160,
+    title: '操作', key: 'action', width: 170,
     render(row) {
       const isApproved = row.approver2_result === '通过'
-      return h(NSpace, { size: 4 }, () => [
+      return h(NSpace, { size: 4, wrap: true, wrapItem: false }, () => [
         isApproved
           ? h(NButton, { size: 'tiny', type: 'success', disabled: true }, '已通过')
           : h(NButton, { size: 'tiny', type: 'success', onClick: () => approve(row) }, '通过'),

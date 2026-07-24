@@ -23,6 +23,7 @@ export default {
   batchDeleteTool: () => request.delete('/tool/batch-delete'),
   uploadImage: (data = {}) => request.post('/tool/upload', data),
   exportTool: () => downloadRequest.get('/tool/export', { responseType: 'blob' }),
+  downloadImportTemplate: () => downloadRequest.get('/tool/import/template', { responseType: 'blob' }),
   importTool: (data = {}) => request.post('/tool/import', data),
   // tool borrow
   getToolBorrowList: (params = {}) => request.get('/tool/borrow/list', { params }),

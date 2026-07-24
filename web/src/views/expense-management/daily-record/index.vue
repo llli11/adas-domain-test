@@ -413,9 +413,9 @@ const rpCols = [
   { title: '供应商', key: 'supplier', width: 90 },
   { title: '委外人员', key: 'outsourced_personnel', width: 200, ellipsis: { tooltip: true } },
   { title: '负责人', key: 'responsible_person', width: 100 },
-  { title: '操作', key: 'action', width: 120,
+  { title: '操作', key: 'action', width: 130,
     render(row) {
-      return h(NSpace, { size: 4 }, () => [
+      return h(NSpace, { size: 4, wrap: true, wrapItem: false }, () => [
         h(NButton, { size: 'tiny', type: 'warning', onClick: () => editRp(row) }, '编辑'),
         h(NButton, { size: 'tiny', type: 'error', onClick: () => deleteRp(row) }, '删除'),
       ])

@@ -69,8 +69,9 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
+    width: 180,
     render(row) {
-      return h('div', { class: 'flex gap-2' }, [
+      return h('div', { class: 'flex flex-wrap gap-2' }, [
         h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }),
         h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }),
         h(NButton, { size: 'small', type: 'primary', onClick: () => handleBorrow(row), disabled: !row.is_in_stock }, { default: () => row.is_in_stock ? '借用' : '不可借' }),
@@ -277,6 +278,24 @@ async function handleExport() {
   }
 }
 
+async function handleDownloadTemplate() {
+  try {
+    const response = await api.downloadImportTemplate()
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'tools_template.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Template error:', error)
+    window.$message?.error('下载模板失败: ' + (error.message || ''))
+  }
+}
+
 function triggerImport() {
   if (importInputRef.value) {
     importInputRef.value.click()
@@ -387,6 +406,7 @@ const borrowColumns = [
   {
     title: '操作',
     key: 'actions',
+    width: 200,
     render(row) {
       const buttons = []
       if (row.approve_status === '待审批') {
@@ -400,7 +420,7 @@ const borrowColumns = [
           h(NButton, { size: 'small', type: 'warning', onClick: () => handleReturn(row) }, { default: () => '归还' })
         )
       }
-      return buttons.length > 0 ? h('div', { class: 'flex gap-2' }, buttons) : '-'
+      return buttons.length > 0 ? h('div', { class: 'flex flex-wrap gap-2' }, buttons) : '-'
     },
   },
 ]
@@ -473,9 +493,10 @@ onMounted(() => {
             <n-button type="primary" @click="fetchTools">搜索</n-button>
             <n-button type="success" @click="handleCreate">新增设备</n-button>
             <NSpace>
+              <n-button type="info" @click="handleDownloadTemplate">下载模板</n-button>
               <n-button type="info" @click="handleExport">导出Excel</n-button>
               <n-button type="info" @click="triggerImport">导入Excel</n-button>
-              <input ref="importInputRef" type="file" accept=".xlsx,.xls" class="hidden" @change="handleImport" />
+              <input ref="importInputRef" type="file" accept=".xlsx" class="hidden" @change="handleImport" />
               <n-button type="error" @click="handleBatchDelete">全部删除</n-button>
             </NSpace>
           </div>

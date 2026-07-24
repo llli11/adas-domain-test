@@ -33,6 +33,7 @@ const columns = [
   { title: '盘点日期', key: 'inventory_date' },
   { title: '责任人', key: 'responsible_person' },
   { title: '应盘数量', key: 'total_count' },
+  { title: '实盘数量', key: 'actual_count' },
   { title: '差异数量', key: 'diff_count' },
   { title: '差异说明', key: 'diff_explanation', ellipsis: { tooltip: true } },
   {
@@ -51,6 +52,7 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
+    width: 200,
     render(row) {
       const buttons = []
       if (row.status !== '已完成') {
@@ -62,7 +64,7 @@ const columns = [
         h(NButton, { size: 'small', type: 'warning', onClick: () => handleEdit(row) }, { default: () => '编辑' }),
         h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }),
       )
-      return h('div', { class: 'flex gap-2' }, buttons)
+      return h('div', { class: 'flex flex-wrap gap-2' }, buttons)
     },
   },
 ]

@@ -276,8 +276,13 @@ class FeishuSyncService:
                 logger.error(f"[Feishu] 获取记录异常: {e}")
                 raise
 
-    async def get_table_fields(self, token: str, table_id: str, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """获取飞书多维表格的字段列表，用于验证字段名匹配"""
+    async def get_table_fields(self, token: str, table_id: str, config: Optional[Dict[str, Any]] = None, field_map: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+        """获取飞书多维表格的字段列表，用于验证字段名匹配
+
+        Args:
+            field_map: 指定表对应的字段映射；为 None 时只记录字段名/类型，
+                       不做"代码映射"比对（避免用车辆表映射去校验其它表导致误导性的"未映射"日志）。
+        """
         cfg = config or self.config
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg['BASE_ID']}/tables/{table_id}/fields"
         headers = {
@@ -295,13 +300,17 @@ class FeishuSyncService:
                 for item in items:
                     field_name = item.get("field_name", "")
                     field_type = item.get("type", "")
-                    logger.info(f"  - 字段名: '{field_name}', 类型: {field_type}, "
-                               f"代码映射: '{FEISHU_FIELD_MAP.get(field_name, '❌ 未映射')}'")
-                # 检查未映射的字段
-                unmapped = [item.get("field_name") for item in items
-                           if item.get("field_name") not in FEISHU_FIELD_MAP]
-                if unmapped:
-                    logger.warning(f"[Feishu] ⚠️ 以下 {len(unmapped)} 个字段未在FEISHU_FIELD_MAP中映射: {unmapped}")
+                    if field_map is not None:
+                        logger.info(f"  - 字段名: '{field_name}', 类型: {field_type}, "
+                                   f"代码映射: '{field_map.get(field_name, '❌ 未映射')}'")
+                    else:
+                        logger.info(f"  - 字段名: '{field_name}', 类型: {field_type}")
+                # 检查未映射的字段（仅在传入映射时才有意义）
+                if field_map is not None:
+                    unmapped = [item.get("field_name") for item in items
+                               if item.get("field_name") not in field_map]
+                    if unmapped:
+                        logger.warning(f"[Feishu] ⚠️ 以下 {len(unmapped)} 个字段未映射: {unmapped}")
                 return items
             else:
                 logger.warning(f"[Feishu] 获取字段列表失败: code={code}, msg={data.get('msg')}")

@@ -3,7 +3,7 @@
     <!-- 筛选栏 -->
     <n-space :size="8" style="margin-bottom: 12px;">
       <n-select v-model:value="filterCategory" :options="categoryOpts" placeholder="类别" size="small" clearable style="width:100px" @update:value="fetchList" />
-      <n-select v-model:value="filterSeries" :options="seriesOpts" placeholder="系列" size="small" clearable style="width:130px" @update:value="fetchList" />
+      <n-select v-model:value="filterSeries" :options="seriesFormOpts" placeholder="系列" size="small" clearable style="width:130px" @update:value="fetchList" />
       <n-input v-model:value="filterExpenseCode" placeholder="费用号" size="small" clearable style="width:130px" @keyup.enter="fetchList" @clear="fetchList" />
       <n-select v-model:value="usageThreshold" :options="usageOpts" placeholder="使用率" size="small" clearable style="width:110px" @update:value="onUsageChange" />
       <n-button size="small" type="primary" @click="fetchList">查询</n-button>
@@ -82,14 +82,19 @@ function extractSeries(v) { return v ? (v.split('-')[0] || v.split(' ')[0] || v)
 
 // 短代码 → 完整系列名映射
 const seriesLabelMap = Object.fromEntries(seriesFormOpts.map(o => [o.value, o.label]))
+// 业务归组：部分项目系列在费用号看板中归入指定展示分组（H66/H66A 等归入 H56 系列）
+const seriesGroupAlias = { 'H66': 'H56' }
 function seriesLabel(short) {
   if (!short) return '-'
+  const base = (short.split('-')[0] || short).trim()
+  for (const [from, to] of Object.entries(seriesGroupAlias)) {
+    if (base.startsWith(from)) return seriesLabelMap[to]
+  }
   // 尝试匹配已知系列
   for (const [key, label] of Object.entries(seriesLabelMap)) {
     if (short.startsWith(key) || short.includes(key)) return label
   }
   // 尝试从系列名匹配
-  const base = short.split('-')[0] || short
   for (const [key, label] of Object.entries(seriesLabelMap)) {
     if (base.startsWith(key) || base.includes(key)) return label
   }
@@ -118,9 +123,9 @@ const columns = [
   { title:'费用使用率', key:'main_usage_rate', width:95, align:'center',
     render(r){ const v=r.main_usage_rate||0; const c=v>=70?'#e74c3c':v>=50?'#f0a020':''; return h('span',{style:{color:c,fontWeight:v>=50?'600':'400'}},`${v}%`) }},
   {
-    title:'操作', key:'action', width:160,
+    title:'操作', key:'action', width:170,
     render(row) {
-      return h(NSpace,{size:4},()=>[
+      return h(NSpace,{size:4,wrap:true,wrapItem:false},()=>[
         h(NButton,{size:'tiny',type:'info',onClick:()=>showDetail(row)},'详情'),
         h(NButton,{size:'tiny',type:'primary',onClick:()=>editRow(row)},'编辑'),
         h(NButton,{size:'tiny',type:'error',ghost:true,onClick:()=>deleteRow(row)},'删除'),
@@ -131,7 +136,18 @@ const columns = [
 
 async function fetchList() {
   loading.value=true
-  try { const p={}; if(filterCategory.value)p.category=filterCategory.value; if(filterSeries.value)p.project_keyword=filterSeries.value; if(filterExpenseCode.value)p.expense_code=filterExpenseCode.value; const r=await expenseApi.getExpenseCodeList(p); allData.value=r.data||[]; onUsageChange(usageThreshold.value); dataVersion.value++ } catch(e){console.error(e)} finally{loading.value=false}
+  try {
+    const p={}
+    if(filterCategory.value) p.category=filterCategory.value
+    if(filterExpenseCode.value) p.expense_code=filterExpenseCode.value
+    // 系列筛选在前端按归组过滤（H66/H66A 等归入 H56），后端单关键词 contains 无法同时匹配多个系列
+    const r=await expenseApi.getExpenseCodeList(p)
+    let list=r.data||[]
+    if(filterSeries.value) list=list.filter(row=>seriesLabel(row.series_name)===seriesLabel(filterSeries.value))
+    allData.value=list
+    onUsageChange(usageThreshold.value)
+    dataVersion.value++
+  } catch(e){console.error(e)} finally{loading.value=false}
 }
 function resetFilter() { filterCategory.value=null; filterSeries.value=null; filterExpenseCode.value=''; usageThreshold.value=null; fetchList() }
 function onUsageChange(v) { tableData.value = v ? allData.value.filter(r=>(r.main_usage_rate||0)>=v) : allData.value.slice() }
