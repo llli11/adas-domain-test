@@ -184,7 +184,6 @@ async def _create_ecu_menus() -> None:
         ),
     ]
     await Menu.bulk_create(ecu_children)
-    # logger.info("ECU菜单创建成功")
 
 async def _create_test_route_menus() -> None:
     """创建测试路线相关菜单"""
@@ -248,7 +247,6 @@ async def _create_test_route_menus() -> None:
     ]
     await Menu.bulk_create(testroute_children)
 
-# ===================== 新增：版本管理菜单创建函数（参数完全匹配截图） =====================
 async def _create_version_menus() -> None:
     """创建版本管理一级菜单，参数完全对齐编辑菜单弹窗截图"""
     await Menu.create(
@@ -273,7 +271,6 @@ async def _create_version_menus() -> None:
         # 跳转路径：输入框为空
         redirect="",
     )
-# ======================================================================
 
 async def init_menus() -> None:
     """初始化菜单"""
@@ -490,12 +487,10 @@ async def init_menus() -> None:
         ecu_menu = await Menu.get_or_none(path="/ecu")
         if not ecu_menu:
             await _create_ecu_menus()
-            logger.info("补充创建ECU菜单")
         # 检查并补充缺失的测试路线菜单
         testroute_menu = await Menu.get_or_none(path="/testroute")
         if not testroute_menu:
             await _create_test_route_menus()
-            logger.info("补充创建测试路线菜单")
         else:
             # 补充缺失的城市详情菜单（隐藏页）
             cooperative_detail = await Menu.get_or_none(path="city/:city", parent_id=testroute_menu.id)
@@ -511,7 +506,6 @@ async def init_menus() -> None:
                     component="/testroute/mapway/cityDetail",
                     keepalive=True,
                 )
-                logger.info("补充创建测试路线城市详情菜单")
             self_developed_detail = await Menu.get_or_none(path="selfdeveloped/city/:city", parent_id=testroute_menu.id)
             if not self_developed_detail:
                 await Menu.create(
@@ -525,12 +519,10 @@ async def init_menus() -> None:
                     component="/testroute/selfdeveloped/cityDetail",
                     keepalive=True,
                 )
-                logger.info("补充创建自研城市详情菜单")
         # 已有菜单时自动补全版本管理菜单
         version_menu = await Menu.get_or_none(path="/versionIndex")
         if not version_menu:
             await _create_version_menus()
-            logger.info("补充创建版本管理菜单")
 
 async def init_apis():
     apis = await api_controller.model.exists()
@@ -539,58 +531,62 @@ async def init_apis():
 
 
 async def init_db() -> None:
-    """初始化数据库并执行自动迁移"""
+    """初始化数据库并执行迁移（日志驱动，结果可见）"""
     try:
-        # 先初始化Tortoise（不自动生成schema）
+        logger.info("[DB] 开始数据库初始化")
+
+        # 1. 初始化 Tortoise ORM
         await Tortoise.init(config=settings.TORTOISE_ORM)
-        
-        # 创建Command实例
+        logger.debug("[DB] Tortoise ORM 初始化完成")
+
         command = Command(tortoise_config=settings.TORTOISE_ORM, app="models")
-        
-        # 检查migrations目录
-        dirname = Path("migrations", "models")
-        migrations_exist = dirname.exists() and list(dirname.glob("[0-9]*.py"))
-        
-        if not migrations_exist:
-            # 首次初始化，删除可能存在的残留文件
-            if dirname.exists():
-                shutil.rmtree(dirname, ignore_errors=True)
-            # 使用 aerich 初始化数据库，避免重复创建表
+
+        migrations_dir = Path("migrations", "models")
+        has_migrations = migrations_dir.exists() and any(migrations_dir.glob("[0-9]*.py"))
+
+        # 2. 首次初始化
+        if not has_migrations:
+            logger.info("[DB] 未检测到迁移文件，执行首次初始化")
+
+            if migrations_dir.exists():
+                shutil.rmtree(migrations_dir, ignore_errors=True)
+
             await command.init_db(safe=True)
-            logger.info("数据库首次初始化完成")
-        else:
-            # 已有迁移文件，不自动生成 schemas，完全由 aerich 管理
-            logger.info("使用 aerich 管理数据库 schema")
-        
-        # 初始化 aerich
+            logger.info("[DB] 数据库首次初始化完成")
+            return
+
+        # 3. 增量迁移
+        logger.info("[DB] 检测到已有迁移文件，进入增量迁移模式")
         await command.init()
-        
-        # 生成新的迁移文件（如果模型有变化）
+
+        # 3.1 生成迁移
         try:
             migration_name = await command.migrate()
             if migration_name:
-                logger.info(f"生成迁移文件: {migration_name}")
+                logger.info(f"[DB] 检测到模型变更，生成迁移: {migration_name}")
             else:
-                logger.info("没有检测到模型变化")
+                logger.info("[DB] 未检测到模型变更")
         except AerichError as e:
-            logger.warning(f"生成迁移文件时出现警告: {e}")
+            logger.warning(f"[DB] migrate 警告: {e}")
         except Exception as e:
-            logger.error(f"生成迁移文件失败: {e}")
-        
-        # 执行迁移
+            logger.error(f"[DB] migrate 失败: {e}")
+            raise
+
+        # 3.2 执行迁移
         try:
             await command.upgrade(run_in_transaction=True)
-            logger.info("数据库迁移执行成功")
+            logger.info("[DB] 数据库迁移执行成功")
         except AerichError as e:
-            logger.warning(f"执行迁移时出现警告: {e}")
+            logger.warning(f"[DB] upgrade 警告: {e}")
         except Exception as e:
-            logger.error(f"执行迁移失败: {e}")
-        
-        # 重要：移除 Tortoise.generate_schemas() 调用，完全由 aerich 管理表结构
-        
+            logger.error(f"[DB] upgrade 失败: {e}")
+            raise
+
+        logger.info("[DB] 数据库初始化完成")
+
     except Exception as e:
-        logger.error(f"数据库初始化失败: {e}")
-        # 不抛出异常，允许服务继续运行
+        logger.error(f"[DB] 数据库初始化异常: {e}", exc_info=True)
+        # 保持原有行为：不抛异常，允许服务继续运行
 
 
 async def init_roles():
