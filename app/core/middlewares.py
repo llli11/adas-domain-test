@@ -109,11 +109,17 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         return self.lenient_json(body)
 
     def lenient_json(self, v: Any) -> Any:
-        if isinstance(v, (str, bytes)):
+        if isinstance(v, bytes):
             try:
                 return json.loads(v)
             except (ValueError, TypeError):
-                pass
+                # 二进制或非 utf-8 字节无法存入 JSONField，跳过记录避免 UnicodeDecodeError
+                return None
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return v
         return v
 
     async def _async_iter(self, items: list[bytes]) -> AsyncGenerator[bytes, None]:

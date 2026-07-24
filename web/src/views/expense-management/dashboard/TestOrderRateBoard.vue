@@ -103,8 +103,8 @@ const columns = [
   { title:'剩余金额', key:'remain', width:80, align:'right' },
   { title:'试验使用率', key:'usageRate', width:85, align:'center', render(r){ const v=r.usageRate||0; const c=v>=95?'#e74c3c':v>=70?'#f0a020':''; return h('span',{style:{color:c,fontWeight:v>=50?'600':'400'}},`${v}%`) }},
   { title:'负责人', key:'responsible_person', width:75 },
-  { title:'操作', key:'action', width:100, fixed:'right',
-    render(row){ return h(NSpace,{size:4},()=>[
+  { title:'操作', key:'action', width:120, fixed:'right',
+    render(row){ return h(NSpace,{size:4,wrap:true,wrapItem:false},()=>[
       h(NButton,{size:'tiny',type:'primary',onClick:()=>editRow(row)},'编辑'),
       h(NButton,{size:'tiny',type:'error',ghost:true,onClick:()=>deleteRow(row)},'删除'),
     ])}

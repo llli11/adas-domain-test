@@ -149,7 +149,7 @@ async def approve_borrow(
 
 
 @router.post("/borrow/return", summary="归还工具")
-async def return_borrow(id: int = Body(..., description="借用记录ID")):
+async def return_borrow(id: int = Body(..., embed=True, description="借用记录ID")):
     borrow = await tool_borrow_controller.get(id=id)
     if borrow.status != "借用中":
         return Fail(msg="该工具已归还")
@@ -443,11 +443,32 @@ async def export_tools():
     return response
 
 
+@router.get("/import/template", summary="下载导入模板(Excel)")
+async def download_import_template():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "工具台账"
+    # 与导出/导入保持一致的标准表头
+    headers = ["设备编号", "设备名称", "设备类别", "设备数量", "设备图片", "当前使用者", "状态", "备注"]
+    ws.append(headers)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    response = StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response.headers["Content-Disposition"] = "attachment; filename=tools_template.xlsx"
+    return response
+
+
 @router.post("/import", summary="导入工具数据(Excel)")
 async def import_tools(file: UploadFile = File(...)):
     try:
         content = await file.read()
-        wb = load_workbook(BytesIO(content))
+        try:
+            wb = load_workbook(BytesIO(content))
+        except Exception:
+            return Fail(msg="无法解析Excel文件，请确保是标准的 .xlsx 格式（建议先点击『下载模板』获取模板，在此基础上填写后导入）")
         ws = wb.active
         
         # 读取表头行，建立列名到索引的映射

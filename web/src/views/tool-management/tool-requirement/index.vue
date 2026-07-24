@@ -48,6 +48,7 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
+    width: 220,
     render(row) {
       const buttons = []
       if (row.status === '待处理') {
@@ -60,7 +61,7 @@ const columns = [
         h(NButton, { size: 'small', type: 'warning', onClick: () => handleEdit(row) }, { default: () => '编辑' }),
         h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }),
       )
-      return h('div', { class: 'flex gap-2' }, buttons)
+      return h('div', { class: 'flex flex-wrap gap-2' }, buttons)
     },
   },
 ]

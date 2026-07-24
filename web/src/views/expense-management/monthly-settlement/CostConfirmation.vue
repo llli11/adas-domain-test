@@ -37,11 +37,11 @@ const columns = [
   { title: '驾驶员单价', key: 'driver_price', width: 90, align: 'right', render: r => r.driver_price ? `${fmt(r.driver_price)}元/天` : '-' },
   { title: '合计金额', key: 'total_amount', width: 100, align: 'right', render: r => fmt(r.total_amount) },
   { title: '状态', key: 'confirm_status', width: 80, align: 'center', render: r => statusTag(r.confirm_status) },
-  { title: '操作', key: 'action', width: 140, render(row) {
+  { title: '操作', key: 'action', width: 160, render(row) {
     const btns = []
     if (row.confirm_status !== '已确认') {
       btns.push(h('button', {
-        style: 'margin-right:8px;color:#18a058;border:1px solid #18a058;background:#fff;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:12px',
+        style: 'color:#18a058;border:1px solid #18a058;background:#fff;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:12px',
         onClick: () => doUpdate(row, '已确认')
       }, '确认'))
     }
@@ -51,7 +51,7 @@ const columns = [
         onClick: () => doUpdate(row, '更正')
       }, '更正'))
     }
-    return h('div', {}, btns)
+    return h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, btns)
   }},
 ]
 
