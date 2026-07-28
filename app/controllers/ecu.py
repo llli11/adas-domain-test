@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional
@@ -6,11 +8,14 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
-from app.models.ecu import ECUIgnore, EcuOperationLog, ReleaseInfo, ReleaseInfoHistory, ReleaseTargetInfo
+from app.models.ecu import ECUBaselineSelect, ECUIgnore, EcuOperationLog, ReleaseInfo, ReleaseInfoHistory, ReleaseTargetInfo
+from app.settings.config import settings
 from app.utils.get_ecu_full_info import parse_ecu_file
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+PLAYW_TIMEOUT = 120  # 2 minutes
 
 
 @router.get("/list", summary="获取ECU列表")
@@ -209,6 +214,42 @@ async def reset_ignore_list(vin: str) -> Dict[str, Any]:
     return {"code": 200, "data": {"message": "重置成功"}, "msg": "OK"}
 
 
+@router.post("/baseline-select/{vin}", summary="选定基线版本")
+async def select_baseline(vin: str, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    ecu_name = body.get("ecu_name")
+    baseline_name = body.get("baseline_name")
+    if not ecu_name or not baseline_name:
+        raise HTTPException(status_code=400, detail="ecu_name and baseline_name are required")
+    existing = await ECUBaselineSelect.get_or_none(vin=vin, ecu_name=ecu_name)
+    if existing:
+        existing.selected_baseline_name = baseline_name
+        await existing.save()
+    else:
+        await ECUBaselineSelect.create(vin=vin, ecu_name=ecu_name, selected_baseline_name=baseline_name)
+    return {"code": 200, "data": {"message": "选定成功"}, "msg": "OK"}
+
+
+@router.post("/baseline-select/{vin}/deselect", summary="取消选定基线版本")
+async def deselect_baseline(vin: str, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    ecu_name = body.get("ecu_name")
+    if not ecu_name:
+        raise HTTPException(status_code=400, detail="ecu_name is required")
+    await ECUBaselineSelect.filter(vin=vin, ecu_name=ecu_name).delete()
+    return {"code": 200, "data": {"message": "取消选定成功"}, "msg": "OK"}
+
+
+@router.get("/baseline-select/{vin}", summary="获取基线选定列表")
+async def get_baseline_select_list(vin: str) -> Dict[str, Any]:
+    records = await ECUBaselineSelect.filter(vin=vin).values("ecu_name", "selected_baseline_name", "created_at")
+    return {"code": 200, "data": records, "msg": "OK"}
+
+
+@router.post("/baseline-select/{vin}/reset", summary="重置所有基线选定")
+async def reset_baseline_select_list(vin: str) -> Dict[str, Any]:
+    await ECUBaselineSelect.filter(vin=vin).delete()
+    return {"code": 200, "data": {"message": "重置成功"}, "msg": "OK"}
+
+
 @router.post("/log", summary="记录操作日志")
 async def add_operation_log(body: Dict[str, Any]) -> Dict[str, Any]:
     await EcuOperationLog.create(
@@ -317,3 +358,244 @@ async def get_log_operators() -> Dict[str, Any]:
             seen.add(op)
             operators.append(op)
     return {"code": 200, "data": operators, "msg": "OK"}
+
+
+def _convert_online_ecu_data(ecu_data: Dict[str, Any]) -> Dict[str, Any]:
+    """将 playw 在线接口返回的 ECU 数据转换为 DID-based 格式（与 HTML 上传格式一致）"""
+    raw_data = dict(ecu_data)
+    did_map = raw_data.pop("_did_map", {})
+
+    # 反向映射: description → DID
+    desc_to_did = {v: k for k, v in did_map.items()}
+
+    result = {}
+    for ecu_name, attrs in raw_data.items():
+        converted = {}
+        ota_update_t = None
+        for key, value in attrs.items():
+            if key == "OTA_UPDATE_T":
+                ota_update_t = value
+                continue
+            did = desc_to_did.get(key, key)
+            converted[did] = value
+        if ota_update_t:
+            converted["OTA_UPDATE_T"] = ota_update_t
+        result[ecu_name] = converted
+
+    result["_did_map"] = did_map
+    return result
+
+
+@router.post("/online-update/{vin}", summary="在线获取ECU更新信息")
+async def online_update_ecu(vin: str) -> Dict[str, Any]:
+    """调用 playw 接口获取该 VIN 的在线 ECU 版本信息，并与数据库中的 updated_at 对比"""
+    record = await ReleaseInfo.get_or_none(vin=vin)
+    if not record:
+        raise HTTPException(status_code=404, detail="未找到该VIN的记录")
+
+    try:
+        playw_url = f"http://{settings.PLAYW_HOST}:{settings.PLAYW_PORT}/run"
+        request_body = json.dumps({"script": "ota_ecu_update", "params": {"vin": vin}})
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-sS", "--connect-timeout", str(PLAYW_TIMEOUT), "-X", "POST", playw_url,
+            "-H", "Content-Type: application/json",
+            "-d", request_body,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=PLAYW_TIMEOUT
+        )
+        if proc.returncode != 0:
+            err_msg = stderr.decode("utf-8", errors="replace").strip() or "curl 返回非零退出码"
+            raise Exception(err_msg)
+        api_result = json.loads(stdout.decode("utf-8"))
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="在线更新接口超时（2分钟）")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Online update API error for VIN {vin}: {e}")
+        raise HTTPException(status_code=502, detail=f"在线更新接口调用失败: {str(e)}")
+
+    if not api_result.get("ok") or not api_result.get("data", {}).get("success"):
+        error_msg = api_result.get("error") or "接口返回失败"
+        raise HTTPException(status_code=502, detail=error_msg)
+
+    ecu_data_raw = api_result["data"].get("ecu_data", {})
+    if not ecu_data_raw:
+        raise HTTPException(status_code=502, detail="接口未返回ECU数据")
+
+    # 转换为 DID-based 格式
+    converted_data = _convert_online_ecu_data(ecu_data_raw)
+
+    # 对比每个 ECU 的 OTA_UPDATE_T 与数据库的 updated_at
+    db_updated_at = record.updated_at
+    db_ecu_info = record.ecu_info or {}
+    did_map = converted_data.get("_did_map", {})
+    sw_did = None
+    for did, desc in did_map.items():
+        if desc == "VOYAH SoftwareVersion":
+            sw_did = did
+            break
+
+    updated_ecus = []
+    skipped_ecus = []
+    all_ota_times = []
+
+    for ecu_name, attrs in converted_data.items():
+        if ecu_name == "_did_map":
+            continue
+        ota_time_str = attrs.pop("OTA_UPDATE_T", None)
+        if ota_time_str:
+            try:
+                ota_time = datetime.fromisoformat(ota_time_str)
+                if ota_time.tzinfo is not None:
+                    ota_time = ota_time.replace(tzinfo=None)
+            except (ValueError, TypeError):
+                ota_time = None
+        else:
+            ota_time = None
+
+        current_db_ecu = db_ecu_info.get(ecu_name, {}) or {}
+        current_version = current_db_ecu.get(sw_did, "") if sw_did else ""
+        ota_version = attrs.get(sw_did, "") if sw_did else ""
+
+        if ota_time:
+            all_ota_times.append(ota_time)
+            if db_updated_at and ota_time.replace(tzinfo=None) <= db_updated_at.replace(tzinfo=None):
+                skipped_ecus.append({
+                    "ecu_name": ecu_name,
+                    "current_db_time": db_updated_at.replace(tzinfo=None, microsecond=0).isoformat() if db_updated_at else None,
+                    "current_version": current_version,
+                    "ota_update_time": ota_time_str,
+                    "ota_version": ota_version,
+                })
+            else:
+                updated_ecus.append({
+                    "ecu_name": ecu_name,
+                    "current_db_time": db_updated_at.replace(tzinfo=None, microsecond=0).isoformat() if db_updated_at else None,
+                    "current_version": current_version,
+                    "ota_update_time": ota_time_str,
+                    "ota_version": ota_version,
+                    "new_versions": attrs,
+                })
+        else:
+            skipped_ecus.append({
+                "ecu_name": ecu_name,
+                "current_db_time": db_updated_at.replace(tzinfo=None, microsecond=0).isoformat() if db_updated_at else None,
+                "current_version": current_version,
+                "ota_update_time": None,
+                "ota_version": ota_version,
+            })
+
+    latest_ota_time = max(all_ota_times).isoformat() if all_ota_times else None
+
+    return {
+        "code": 200,
+        "data": {
+            "vin": vin,
+            "updated_ecus": updated_ecus,
+            "skipped_ecus": skipped_ecus,
+            "total_updated": len(updated_ecus),
+            "total_skipped": len(skipped_ecus),
+            "latest_ota_time": latest_ota_time,
+            "converted_ecu_data": converted_data,
+            "current_data_source": record.data_source,
+            "current_updated_at": db_updated_at.replace(tzinfo=None, microsecond=0).isoformat() if db_updated_at else None,
+        },
+        "msg": "OK",
+    }
+
+
+@router.post("/online-update/confirm/{vin}", summary="确认在线更新ECU信息到数据库")
+async def confirm_online_update(vin: str, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """确认将在线获取的 ECU 版本信息写入数据库"""
+    record = await ReleaseInfo.get_or_none(vin=vin)
+    if not record:
+        raise HTTPException(status_code=404, detail="未找到该VIN的记录")
+
+    ecu_data = body.get("ecu_data", {})
+    latest_ota_time_str = body.get("latest_ota_time")
+
+    if not ecu_data:
+        raise HTTPException(status_code=400, detail="缺少 ecu_data")
+
+    existing_ecu_info = record.ecu_info or {}
+    db_updated_at = record.updated_at
+
+    # 对比并更新每个 ECU
+    new_ecu_info = dict(existing_ecu_info)
+    # 合并 _did_map（优先使用新的）
+    if "_did_map" in ecu_data:
+        existing_did_map = existing_ecu_info.get("_did_map", {})
+        merged_did_map = dict(existing_did_map)
+        merged_did_map.update(ecu_data["_did_map"])
+        new_ecu_info["_did_map"] = merged_did_map
+
+    has_any_update = False
+    for ecu_name, attrs in ecu_data.items():
+        if ecu_name == "_did_map":
+            continue
+        ota_time_str = attrs.pop("OTA_UPDATE_T", None) if isinstance(attrs, dict) else None
+        if ota_time_str:
+            try:
+                ota_time = datetime.fromisoformat(ota_time_str)
+                if ota_time.tzinfo is not None:
+                    ota_time = ota_time.replace(tzinfo=None)
+            except (ValueError, TypeError):
+                ota_time = None
+        else:
+            ota_time = None
+
+        version_data = {k: v for k, v in (attrs.items() if isinstance(attrs, dict) else {})}
+
+        if ota_time and (not db_updated_at or ota_time.replace(tzinfo=None) > db_updated_at.replace(tzinfo=None)):
+            new_ecu_info[ecu_name] = version_data
+            has_any_update = True
+
+    # 解析最新的 OTA 时间
+    if latest_ota_time_str:
+        try:
+            latest_ota_time = datetime.fromisoformat(latest_ota_time_str)
+        except (ValueError, TypeError):
+            latest_ota_time = datetime.now()
+    else:
+        latest_ota_time = datetime.now()
+
+    async with in_transaction("mysql"):
+        if record.ecu_info is not None:
+            await ReleaseInfoHistory.create(
+                vin=vin,
+                ecu_info=record.ecu_info,
+                data_source=record.data_source or "vdc_export",
+                modified_at=datetime.now(),
+                updated_at=record.updated_at,
+            )
+
+            count = await ReleaseInfoHistory.filter(vin=vin).count()
+            if count > 10:
+                keep_ids = await ReleaseInfoHistory.filter(vin=vin).order_by(
+                    "-created_at"
+                ).limit(10).values_list("id", flat=True)
+                await ReleaseInfoHistory.filter(vin=vin).exclude(id__in=keep_ids).delete()
+
+        # 使用 filter().update() 绕过 auto_now=True 对 updated_at 的覆盖
+        await ReleaseInfo.filter(vin=vin).update(
+            ecu_info=new_ecu_info,
+            data_source="ota_online",
+            updated_at=latest_ota_time,
+            modified_at=datetime.now(),
+        )
+
+    return {
+        "code": 200,
+        "data": {
+            "message": "在线更新成功",
+            "vin": vin,
+            "updated_ecu_count": len([e for e in ecu_data if e != "_did_map"]),
+            "new_data_source": "ota_online",
+            "new_updated_at": latest_ota_time.isoformat() if latest_ota_time else None,
+        },
+        "msg": "OK",
+    }

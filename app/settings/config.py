@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     SERVER_PASSWORD: str = "mypassword123456"
     SERVER_DATABASE: str = "mydb_local"
 
+    PLAYW_HOST: str = "playw"
+    PLAYW_PORT: int = 7777
+
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 
     model_config = {"env_file": ".env", "extra": "allow"}

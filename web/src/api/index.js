@@ -143,10 +143,18 @@ export default {
   restoreECUIgnore: (vin, data) => request.post(`/ecu/ignore/${vin}/restore`, data),
   getECUIgnoreList: (vin) => request.get(`/ecu/ignore/${vin}`),
   resetECUIgnore: (vin) => request.post(`/ecu/ignore/${vin}/reset`, {}),
+  // 基线选定
+  selectBaseline: (vin, data) => request.post(`/ecu/baseline-select/${vin}`, data),
+  deselectBaseline: (vin, data) => request.post(`/ecu/baseline-select/${vin}/deselect`, data),
+  getBaselineSelectList: (vin) => request.get(`/ecu/baseline-select/${vin}`),
+  resetBaselineSelect: (vin) => request.post(`/ecu/baseline-select/${vin}/reset`, {}),
   // 操作记录
   addOperationLog: (data = {}) => request.post('/ecu/log', data),
   getOperationStats: () => request.get('/ecu/log/stats'),
   getOperationChart: (params = {}) => request.get('/ecu/log/chart', { params }),
   getOperationLogList: (params = {}) => request.get('/ecu/log/list', { params }),
   getLogOperators: () => request.get('/ecu/log/operators'),
+  // 在线更新ECU
+  onlineUpdateECU: (vin) => request.post(`/ecu/online-update/${vin}`, {}, { timeout: 130000 }),
+  confirmOnlineUpdateECU: (vin, data) => request.post(`/ecu/online-update/confirm/${vin}`, data),
 }
