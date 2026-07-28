@@ -14,6 +14,8 @@ import {
   NDataTable,
   NUpload,
   NInput,
+  NTag,
+  NDivider,
 } from 'naive-ui'
 import * as XLSX from 'xlsx'
 import TheIcon from '@/components/icon/TheIcon.vue'
@@ -146,9 +148,16 @@ const updateModalVisible = ref(false)
 const updateLoading = ref(false)
 const updateFile = ref(null)
 
+const onlineUpdateLoading = ref(false)
+const onlineUpdateResult = ref(null)
+const onlineUpdateConfirmVisible = ref(false)
+const onlineUpdateConfirmLoading = ref(false)
+
 const possibleMatchPage = ref({})
 
 const ignoredEcuNames = ref([])
+
+const baselineSelectMap = ref({})  // { ecuName: selectedBaselineName }
 
 function openUpdateModal() {
   updateModalVisible.value = true
@@ -187,6 +196,57 @@ api
     .finally(() => {
       updateLoading.value = false
     })
+}
+
+function handleOnlineUpdate() {
+  const vin = route.params.vin
+  onlineUpdateLoading.value = true
+  api
+    .onlineUpdateECU(vin)
+    .then((res) => {
+      updateModalVisible.value = false
+      onlineUpdateResult.value = res.data
+      onlineUpdateConfirmVisible.value = true
+    })
+    .catch((err) => {
+      window.$message?.error(err.message || '在线更新请求失败')
+    })
+    .finally(() => {
+      onlineUpdateLoading.value = false
+    })
+}
+
+function handleOnlineUpdateConfirm() {
+  if (!onlineUpdateResult.value) return
+  const vin = route.params.vin
+  onlineUpdateConfirmLoading.value = true
+  api
+    .confirmOnlineUpdateECU(vin, {
+      ecu_data: onlineUpdateResult.value.converted_ecu_data,
+      latest_ota_time: onlineUpdateResult.value.latest_ota_time,
+    })
+    .then(() => {
+      window.$message?.success('在线更新成功')
+      onlineUpdateConfirmVisible.value = false
+      onlineUpdateResult.value = null
+      loadDetail()
+      api.addOperationLog({
+        operation_type: '在线更新',
+        target_vin: route.params.vin,
+        operator: userStore.name || 'system',
+      })
+    })
+    .catch((err) => {
+      window.$message?.error(err.message || '在线更新确认失败')
+    })
+    .finally(() => {
+      onlineUpdateConfirmLoading.value = false
+    })
+}
+
+function handleOnlineUpdateCancel() {
+  onlineUpdateConfirmVisible.value = false
+  onlineUpdateResult.value = null
 }
 
 function openHistoryModal() {
@@ -314,6 +374,39 @@ function loadIgnoreList() {
   }).catch(() => {})
 }
 
+function loadBaselineSelectList() {
+  const vin = route.params.vin
+  api.getBaselineSelectList(vin).then((res) => {
+    const map = {}
+    for (const item of (res.data || [])) {
+      map[item.ecu_name] = item.selected_baseline_name
+    }
+    baselineSelectMap.value = map
+  }).catch(() => {})
+}
+
+function handleSelectBaseline(ecuName, baselineName) {
+  const vin = route.params.vin
+  api.selectBaseline(vin, { ecu_name: ecuName, baseline_name: baselineName }).then(() => {
+    baselineSelectMap.value = { ...baselineSelectMap.value, [ecuName]: baselineName }
+    window.$message?.success('已选定基线版本')
+  }).catch((err) => {
+    window.$message?.error(err.message || '选定失败')
+  })
+}
+
+function handleDeselectBaseline(ecuName) {
+  const vin = route.params.vin
+  api.deselectBaseline(vin, { ecu_name: ecuName }).then(() => {
+    const newMap = { ...baselineSelectMap.value }
+    delete newMap[ecuName]
+    baselineSelectMap.value = newMap
+    window.$message?.success('已取消选定')
+  }).catch((err) => {
+    window.$message?.error(err.message || '取消选定失败')
+  })
+}
+
 function handleIgnoreECU(ecuName) {
   const vin = route.params.vin
   api.ignoreECU(vin, { ecu_name: ecuName }).then(() => {
@@ -334,15 +427,23 @@ function handleRestoreECU(ecuName) {
   })
 }
 
-function handleResetAllIgnore() {
+function handleResetAll() {
   const vin = route.params.vin
-  api.resetECUIgnore(vin).then(() => {
+  Promise.all([
+    api.resetECUIgnore(vin),
+    api.resetBaselineSelect(vin),
+  ]).then(() => {
     ignoredEcuNames.value = []
-    window.$message?.success('已重置所有忽略')
+    baselineSelectMap.value = {}
+    window.$message?.success('已重置所有')
   }).catch((err) => {
     window.$message?.error(err.message || '重置失败')
   })
 }
+
+const hasAnySelection = computed(() => {
+  return ignoredEcuNames.value.length > 0 || Object.keys(baselineSelectMap.value).length > 0
+})
 
 function formatTime(t) {
   if (!t) return '-'
@@ -357,8 +458,9 @@ function getSummarySortKey(reason) {
   if (reason === '一致') return 3
   if (reason === '超前') return 4
   if (reason === '离线') return 5
-  if (reason === '基线中有，车辆中未检测到') return 6
-  return 7
+  if (reason === '忽略') return 6
+  if (reason === '基线中有，车辆中未检测到') return 7
+  return 8
 }
 
 const allSummaryTableData = computed(() => {
@@ -397,7 +499,7 @@ const pendingTableData = computed(() => {
   const results = compareResults.value
   const hasBehind = Object.values(results).some((r) => r.reason === '落后')
   for (const [ecuName, result] of Object.entries(results)) {
-    if (result.reason === '一致' || result.reason === '超前') continue
+    if (result.reason === '一致' || result.reason === '超前' || result.reason === '忽略') continue
     if (result.reason === '本地无响应' && hasBehind) continue
     const swDid = getDidForDescription('VOYAH SoftwareVersion')
     const ecuItem = ecuInfo.value[ecuName]
@@ -407,7 +509,7 @@ const pendingTableData = computed(() => {
       currentVersion: ecuItem?.[swDid] || '',
       baselineVersion: result.baselineVersion,
       result: displayReason,
-      _sortKey: result.reason === '零件号不一致' ? 0 : result.reason === '基线中有可能相关的版本需要人工确认' ? 1 : result.reason === '落后' ? 2 : 3,
+      _sortKey: getSummarySortKey(displayReason),
     })
   }
   data.sort((a, b) => a._sortKey - b._sortKey)
@@ -427,6 +529,22 @@ const summaryColumns = [
   { title: '当前ECU软件版本', key: 'currentVersion' },
   { title: '基线软件版本', key: 'baselineVersion' },
   { title: '软件版本对比结果', key: 'result' },
+]
+
+const onlineUpdateConfirmColumns = [
+  { title: 'ECU名称', key: 'ecu_name', width: 120, ellipsis: { tooltip: true } },
+  { title: '当前版本时间', key: 'current_db_time', width: 180 },
+  { title: '当前版本', key: 'current_version', width: 190, ellipsis: { tooltip: true } },
+  { title: 'OTA更新时间', key: 'ota_update_time', width: 180 },
+  { title: 'OTA版本', key: 'ota_version', width: 190, ellipsis: { tooltip: true } },
+]
+
+const onlineUpdateSkipColumns = [
+  { title: 'ECU名称', key: 'ecu_name', width: 120, ellipsis: { tooltip: true } },
+  { title: '当前版本时间', key: 'current_db_time', width: 180 },
+  { title: '当前版本', key: 'current_version', width: 190, ellipsis: { tooltip: true } },
+  { title: 'OTA更新时间', key: 'ota_update_time', width: 180 },
+  { title: 'OTA版本', key: 'ota_version', width: 190, ellipsis: { tooltip: true } },
 ]
 
 const ecuInfo = computed(() => {
@@ -551,17 +669,70 @@ const compareResults = computed(() => {
   const results = {}
   if (!baselineData.value?.ecu_info) return results
 
-  for (const pair of filteredPairedEcuList.value) {
+  const swDid = getDidForDescription('VOYAH SoftwareVersion')
+
+  for (const pair of pairedEcuList.value) {
     const { ecuName, ecuItem, baseline, possibleBaselines } = pair
     if (!ecuName) continue
 
-    const swDid = getDidForDescription('VOYAH SoftwareVersion')
+    // 忽略状态的 ECU 标记为"忽略"
+    if (ignoredEcuNames.value.includes(ecuName)) {
+      const selectedBaselineName = baselineSelectMap.value[ecuName]
+      let selectedVersion = ''
+      if (selectedBaselineName && baselineData.value?.ecu_info) {
+        const selectedItem = baselineData.value.ecu_info[selectedBaselineName]
+        selectedVersion = selectedItem ? (selectedItem[swDid] || '') : ''
+      }
+      const matchedVersion = baseline ? baseline.item[swDid] : (possibleBaselines?.[0]?.item?.[swDid] || '')
+      results[ecuName] = { color: 'gray', baselineVersion: selectedVersion || matchedVersion, reason: '忽略' }
+      continue
+    }
+
     const vehicleVersion = ecuItem[swDid]
 
+    // 自身有选定的基线版本
+    const selectedBaselineName = baselineSelectMap.value[ecuName]
+    let selectedBaselineItem = null
+    if (selectedBaselineName && baselineData.value?.ecu_info) {
+      selectedBaselineItem = baselineData.value.ecu_info[selectedBaselineName]
+    }
+
     if (noResponseValues.includes(vehicleVersion)) {
-      const baselineVersion = baseline ? baseline.item[swDid] : (possibleBaselines?.[0]?.item?.[swDid] || '')
+      const baselineVersion = selectedBaselineItem
+        ? selectedBaselineItem[swDid]
+        : (baseline ? baseline.item[swDid] : (possibleBaselines?.[0]?.item?.[swDid] || ''))
       results[ecuName] = { color: 'gray', baselineVersion, reason: '本地无响应' }
       continue
+    }
+
+    // 如果有选定基线，用它来对比
+    if (selectedBaselineItem) {
+      const baselineVersion = selectedBaselineItem[swDid]
+      if (vehicleVersion && baselineVersion) {
+        const vehiclePartNumber = vehicleVersion.slice(0, 11)
+        const baselinePartNumber = baselineVersion.slice(0, 11)
+        if (vehiclePartNumber !== baselinePartNumber) {
+          results[ecuName] = { color: 'red', baselineVersion, reason: '零件号不一致' }
+          continue
+        }
+        const vehicleLast2 = vehicleVersion.slice(-2)
+        const baselineLast2 = baselineVersion.slice(-2)
+        const getIndex = (str) => {
+          const first = str.charCodeAt(0) - 65
+          const second = str.charCodeAt(1) - 65
+          return first * 26 + second
+        }
+        const vehicleIndex = getIndex(vehicleLast2)
+        const baselineIndex = getIndex(baselineLast2)
+        if (vehicleIndex < baselineIndex) {
+          results[ecuName] = { color: 'red', baselineVersion, reason: '落后' }
+        } else if (vehicleIndex === baselineIndex) {
+          results[ecuName] = { color: 'green', baselineVersion, reason: '一致' }
+        } else {
+          results[ecuName] = { color: 'yellow', baselineVersion, reason: '超前' }
+        }
+        continue
+      }
     }
 
     if (!baseline && possibleBaselines && possibleBaselines.length > 0) {
@@ -621,6 +792,7 @@ function loadDetail() {
       ecuDetail.value = res.data
       remark.value = res.data?.remark || ''
       loadIgnoreList()
+      loadBaselineSelectList()
     })
     .catch(() => {
       ecuDetail.value = null
@@ -747,7 +919,7 @@ onMounted(() => {
               <TheIcon icon="material-symbols:compare-arrows" :size="16" class="mr-5" />
               对比基线
             </NButton>
-            <NButton v-if="ignoredEcuNames.length > 0" quaternary type="warning" @click="handleResetAllIgnore">
+            <NButton v-if="hasAnySelection" quaternary type="warning" @click="handleResetAll">
               <TheIcon icon="material-symbols:restart-alt" :size="16" class="mr-5" />
               重置所有
             </NButton>
@@ -840,9 +1012,12 @@ onMounted(() => {
                       yellow: compareResults[pair.ecuName]?.color === 'yellow',
                       gray: compareResults[pair.ecuName]?.color === 'gray',
                       'possible-match': !pair.baseline && pair.possibleBaselines && pair.possibleBaselines.length > 0,
+                      ignored: ignoredEcuNames.includes(pair.ecuName),
                     }"
                   >
-                    <template #header>{{ pair.ecuName }}{{ getEcuDesc(pair.ecuName) }}</template>
+                    <template #header>
+                      <span :class="{ 'line-through': ignoredEcuNames.includes(pair.ecuName) }">{{ pair.ecuName }}{{ getEcuDesc(pair.ecuName) }}</span>
+                    </template>
                     <template #header-extra>
                       <NButton v-if="ignoredEcuNames.includes(pair.ecuName)" size="tiny" @click.stop="handleRestoreECU(pair.ecuName)">恢复</NButton>
                       <NButton v-else size="tiny" @click.stop="handleIgnoreECU(pair.ecuName)">忽略</NButton>
@@ -903,8 +1078,28 @@ onMounted(() => {
                         <NCard
                           size="small"
                           class="ecu-card possible-match"
+                          :class="{
+                            selected: baselineSelectMap[pair.ecuName] === pair.possibleBaselines[currentPage(pair.key)].name,
+                          }"
                         >
-                          <template #header>{{ pair.possibleBaselines[currentPage(pair.key)].name }}{{ getEcuDesc(pair.possibleBaselines[currentPage(pair.key)].name) }}</template>
+                          <template #header>
+                            <span>{{ pair.possibleBaselines[currentPage(pair.key)].name }}{{ getEcuDesc(pair.possibleBaselines[currentPage(pair.key)].name) }}</span>
+                            <span v-if="baselineSelectMap[pair.ecuName] === pair.possibleBaselines[currentPage(pair.key)].name" class="selected-tag">已选定</span>
+                          </template>
+                          <template #header-extra>
+                            <NButton
+                              v-if="baselineSelectMap[pair.ecuName] === pair.possibleBaselines[currentPage(pair.key)].name"
+                              size="tiny"
+                              type="warning"
+                              @click.stop="handleDeselectBaseline(pair.ecuName)"
+                            >取消选定</NButton>
+                            <NButton
+                              v-else
+                              size="tiny"
+                              type="primary"
+                              @click.stop="handleSelectBaseline(pair.ecuName, pair.possibleBaselines[currentPage(pair.key)].name)"
+                            >选定</NButton>
+                          </template>
                           <div class="ecu-info-list">
                             <div v-for="(value, key) in pair.possibleBaselines[currentPage(pair.key)].item" :key="key" class="info-item">
                               <span class="info-label">{{ didMap[key] || key }}</span>
@@ -1079,7 +1274,7 @@ onMounted(() => {
       title="更新ECU信息"
       preset="card"
       style="width: 500px"
-      :mask-closable="false"
+      :mask-closable="true"
     >
       <NForm label-placement="left" label-width="80px">
         <NFormItem label="VIN">
@@ -1097,9 +1292,64 @@ onMounted(() => {
       </NForm>
       <template #footer>
         <div style="display: flex; justify-content: flex-end">
-          <NButton @click="updateModalVisible = false">取消</NButton>
-          <NButton type="primary" style="margin-left: 16px" :loading="updateLoading" @click="handleUpdate">
+          <NButton type="info" :loading="onlineUpdateLoading" @click="handleOnlineUpdate">在线更新</NButton>
+          <NButton style="margin-left: 12px" @click="updateModalVisible = false">取消</NButton>
+          <NButton type="primary" style="margin-left: 12px" :loading="updateLoading" @click="handleUpdate">
             确认
+          </NButton>
+        </div>
+      </template>
+    </NModal>
+
+    <NModal
+      v-model:show="onlineUpdateConfirmVisible"
+      title="在线更新确认"
+      preset="card"
+      style="width: 1100px; z-index: 1001"
+      :mask-closable="false"
+    >
+      <template v-if="onlineUpdateResult">
+        <div style="margin-bottom: 16px">
+          <div style="display: flex; gap: 16px; margin-bottom: 12px">
+            <NTag type="success" size="large">待更新: {{ onlineUpdateResult.total_updated }} 个ECU</NTag>
+            <NTag type="default" size="large">已跳过: {{ onlineUpdateResult.total_skipped }} 个ECU</NTag>
+          </div>
+          <NDivider />
+          <div style="font-size: 14px; color: #666; margin-bottom: 8px">
+            以下ECU的 OTA_UPDATE_T 晚于数据库记录的更新时间，将被更新：
+          </div>
+          <NDataTable
+            v-if="onlineUpdateResult.updated_ecus.length > 0"
+            :columns="onlineUpdateConfirmColumns"
+            :data="onlineUpdateResult.updated_ecus"
+            :bordered="false"
+            size="small"
+          />
+          <div v-else style="color: #999; padding: 24px 0; text-align: center">没有需要更新的ECU</div>
+          <NDivider />
+          <div style="font-size: 14px; color: #666; margin-bottom: 8px">
+            以下ECU的 OTA_UPDATE_T 早于或等于数据库记录的更新时间，将被跳过：
+          </div>
+          <NDataTable
+            v-if="onlineUpdateResult.skipped_ecus.length > 0"
+            :columns="onlineUpdateSkipColumns"
+            :data="onlineUpdateResult.skipped_ecus"
+            :bordered="false"
+            size="small"
+          />
+          <div style="margin-top: 12px; color: #999; font-size: 13px">
+            确认后，updated_at 将更新为: {{ onlineUpdateResult.latest_ota_time || '无' }}
+          </div>
+          <div style="color: #999; font-size: 13px">
+            data_source 将从 "{{ onlineUpdateResult.current_data_source }}" 改为 "ota_online"
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end">
+          <NButton @click="handleOnlineUpdateCancel">取消</NButton>
+          <NButton type="primary" style="margin-left: 12px" :loading="onlineUpdateConfirmLoading" @click="handleOnlineUpdateConfirm">
+            确认更新
           </NButton>
         </div>
       </template>
@@ -1317,5 +1567,17 @@ onMounted(() => {
 :deep(.ecu-card.ignored) .info-item {
   text-decoration: line-through;
   opacity: 0.6;
+}
+
+.ecu-card.selected {
+  border-color: #18a058;
+  box-shadow: 0 0 0 1px #18a058;
+}
+
+.selected-tag {
+  font-size: 12px;
+  color: #18a058;
+  margin-left: 8px;
+  font-weight: 400;
 }
 </style>

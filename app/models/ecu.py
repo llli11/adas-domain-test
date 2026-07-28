@@ -60,3 +60,16 @@ class ECUIgnore(models.Model):
     class Meta:
         table = "t_ecu_ignore"
         unique_together = (("vin", "ecu_name"),)
+
+
+class ECUBaselineSelect(models.Model):
+    id = fields.IntField(pk=True)
+    vin = fields.CharField(max_length=50, index=True)
+    ecu_name = fields.CharField(max_length=200)
+    selected_baseline_name = fields.CharField(max_length=200)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "t_ecu_baseline_select"
+        unique_together = (("vin", "ecu_name"),)
