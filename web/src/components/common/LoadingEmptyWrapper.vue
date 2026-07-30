@@ -6,19 +6,14 @@
         <n-spin :show="true" :size="loadingSize" />
       </div>
       <div v-show="isEmpty" class="absolute-center">
-        <div class="relative">
-          <icon-custom-no-data :class="iconClass" />
-          <p class="absolute-lb w-full text-center" :class="descClass">{{ emptyDesc }}</p>
-        </div>
+        <p class="text-center" :class="descClass">{{ emptyDesc }}</p>
       </div>
       <div v-show="!network" class="absolute-center">
         <div
-          class="relative"
           :class="{ 'cursor-pointer': showNetworkReload }"
           @click="handleReload"
         >
-          <icon-custom-network-error :class="iconClass" />
-          <p class="absolute-lb w-full text-center" :class="descClass">{{ networkErrorDesc }}</p>
+          <p class="text-center" :class="descClass">{{ networkErrorDesc }}</p>
         </div>
       </div>
     </div>

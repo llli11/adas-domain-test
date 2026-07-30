@@ -236,7 +236,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="expiry-alerts-root">
+  <div class="expiry-alerts-root vehicle-card">
     <!-- 子 Tab 切换 -->
     <div class="sub-tabs">
       <div

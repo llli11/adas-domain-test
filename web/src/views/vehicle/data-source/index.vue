@@ -197,7 +197,7 @@ const statCards = computed(() => [
 </script>
 
 <template>
-  <div class="data-source-root">
+  <div class="data-source-root vehicle-card">
     <!-- 顶部控制栏：4个容器一排 -->
     <div class="top-bar">
       <!-- 容器1-3：数据统计 -->
@@ -226,7 +226,7 @@ const statCards = computed(() => [
     <!-- 数据源卡片列表 -->
     <div class="source-grid">
       <!-- 数据源1：外部飞书导入（预置） -->
-      <NCard :bordered="false" class="source-card">
+      <NCard :bordered="false" class="source-card" :content-style="{ display: 'flex', flexDirection: 'column', flex: 1 }">
         <template #header>
           <div class="source-card-header">
             <div class="source-card-icon" style="background: rgba(32,128,240,0.1)">
@@ -265,7 +265,7 @@ const statCards = computed(() => [
       </NCard>
 
       <!-- 数据源2：外部飞书导入（用户自定义） -->
-      <NCard :bordered="false" class="source-card">
+      <NCard :bordered="false" class="source-card" :content-style="{ display: 'flex', flexDirection: 'column', flex: 1 }">
         <template #header>
           <div class="source-card-header">
             <div class="source-card-icon" style="background: rgba(240,160,32,0.1)">
@@ -305,7 +305,7 @@ const statCards = computed(() => [
           </NInputGroup>
         </div>
 
-        <div class="source-action mt-12">
+        <div class="source-action">
           <NButton
             type="primary"
             :loading="savingConfig"
@@ -323,7 +323,7 @@ const statCards = computed(() => [
       </NCard>
 
       <!-- 数据源3：外部CSV导入 -->
-      <NCard :bordered="false" class="source-card">
+      <NCard :bordered="false" class="source-card" :content-style="{ display: 'flex', flexDirection: 'column', flex: 1 }">
         <template #header>
           <div class="source-card-header">
             <div class="source-card-icon" style="background: rgba(24,160,88,0.1)">
@@ -428,15 +428,24 @@ const statCards = computed(() => [
   line-height: 1;
 }
 
-/* 数据源卡片网格 */
+/* 数据源卡片网格：3 个卡片占满宽度 */
 .source-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 
 .source-card {
   border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.source-card :deep(.n-card__content) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .source-card-header {
@@ -468,6 +477,7 @@ const statCards = computed(() => [
 }
 
 .source-action {
+  margin-top: auto;
   margin-bottom: 4px;
 }
 

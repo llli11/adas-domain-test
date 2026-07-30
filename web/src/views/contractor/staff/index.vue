@@ -150,7 +150,7 @@ const rules = {
 </script>
 
 <template>
-  <CommonPage show-footer title="人员台账">
+  <CommonPage show-footer :show-header="false" title="人员台账">
     <template #action>
       <NButton v-permission="'post/api/v1/contractor/staff/create'" type="primary" @click="handleAdd">
         <TheIcon icon="material-symbols:add" :size="18" class="mr-5" />新增入职

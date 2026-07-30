@@ -107,7 +107,7 @@ const rules = {
 </script>
 
 <template>
-  <CommonPage show-footer title="流动管理">
+  <CommonPage show-footer :show-header="false" title="流动管理">
     <template #action>
       <NButton v-permission="'post/api/v1/contractor/transfer/apply'" type="primary" @click="handleAdd">
         <TheIcon icon="material-symbols:add" :size="18" class="mr-5" />发起流转

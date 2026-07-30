@@ -305,7 +305,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="data-detail-root">
+  <div class="data-detail-root vehicle-card">
     <!-- 搜索筛选栏 -->
     <div class="search-bar">
       <div class="search-left">

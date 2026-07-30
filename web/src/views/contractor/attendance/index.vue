@@ -68,7 +68,7 @@ const rules = {
 </script>
 
 <template>
-  <CommonPage show-footer title="考勤管理">
+  <CommonPage show-footer :show-header="false" title="考勤管理">
     <template #action>
       <NButton v-permission="'post/api/v1/contractor/attendance/create'" type="primary" @click="handleAdd">
         <TheIcon icon="material-symbols:add" :size="18" class="mr-5" />新增考勤

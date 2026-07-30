@@ -1,6 +1,5 @@
 <template>
   <div style="padding:15px">
-    <h3 style="margin:0 0 12px">预算预警 <span v-if="!loaded" style="color:red;font-size:14px">(未加载)</span></h3>
 
     <n-card title="试验需求预警" size="small" style="margin-bottom:12px">
       <n-data-table :columns="toCols" :data="toAlerts" :loading="loading" size="small" :pagination="{pageSize:10}" :scroll-x="820" :max-height="300" />
