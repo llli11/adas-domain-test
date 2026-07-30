@@ -84,7 +84,7 @@ const columns = [
 </script>
 
 <template>
-  <CommonPage show-footer title="考评管理">
+  <CommonPage show-footer :show-header="false" title="考评管理">
     <template #action>
       <NButton type="primary" @click="handleGenerate">
         生成本月考评

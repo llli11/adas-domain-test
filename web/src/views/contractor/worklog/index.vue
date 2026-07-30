@@ -124,7 +124,7 @@ const columns = [
 </script>
 
 <template>
-  <CommonPage show-footer title="工作日志审核">
+  <CommonPage show-footer :show-header="false" title="工作日志审核">
     <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getContractorWorkLogList">
       <template #queryBar>
         <QueryBarItem label="人员" :label-width="40">

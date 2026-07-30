@@ -92,7 +92,7 @@ const columns = [
 </script>
 
 <template>
-  <CommonPage show-footer title="请假管理">
+  <CommonPage show-footer :show-header="false" title="请假管理">
     <CrudTable ref="$table" v-model:query-items="queryItems" :columns="columns" :get-data="api.getContractorLeaveList">
       <template #queryBar>
         <QueryBarItem label="人员" :label-width="40">

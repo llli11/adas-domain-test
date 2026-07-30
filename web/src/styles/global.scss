@@ -72,3 +72,9 @@ body {
     }
   }
 }
+
+/* 车辆子页外层容器，对齐工具管理：外层 padding，内部 n-card 作卡片 */
+.vehicle-card {
+  padding: 15px;
+  box-sizing: border-box;
+}

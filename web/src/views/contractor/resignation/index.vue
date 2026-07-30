@@ -90,7 +90,7 @@ const approveRules = {
 </script>
 
 <template>
-  <CommonPage show-footer title="离职管理">
+  <CommonPage show-footer :show-header="false" title="离职管理">
     <template #action>
       <NButton v-permission="'post/api/v1/contractor/resignation/create'" type="primary" @click="handleAdd">
         <TheIcon icon="material-symbols:add" :size="18" class="mr-5" />提交离职申请

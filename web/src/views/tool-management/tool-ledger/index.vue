@@ -472,7 +472,7 @@ onMounted(() => {
 
 <template>
   <div p-15>
-        <n-card title="搜索条件" mb-15>
+        <n-card mb-15>
           <div flex flex-wrap gap-15>
             <div flex items-center>
               <span w-80 flex-shrink-0>设备编号:</span>

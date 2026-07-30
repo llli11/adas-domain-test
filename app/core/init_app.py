@@ -272,6 +272,68 @@ async def _create_version_menus() -> None:
         redirect="",
     )
 
+async def _create_vehicle_menus() -> None:
+    """创建车辆管理目录及 4 个子菜单"""
+    vehicle_parent = await Menu.create(
+        menu_type=MenuType.CATALOG,
+        name="车辆管理",
+        path="/vehicle",
+        order=3,
+        parent_id=0,
+        icon="mdi:car-multiple",
+        is_hidden=False,
+        component="Layout",
+        keepalive=False,
+        redirect="/vehicle/task-status",
+    )
+    vehicle_children = [
+        Menu(
+            menu_type=MenuType.MENU,
+            name="车辆任务状态",
+            path="task-status",
+            order=1,
+            parent_id=vehicle_parent.id,
+            icon="material-symbols:task-alt",
+            is_hidden=False,
+            component="/vehicle/task-status",
+            keepalive=True,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="车辆数据详情",
+            path="data-detail",
+            order=2,
+            parent_id=vehicle_parent.id,
+            icon="material-symbols:table-rows",
+            is_hidden=False,
+            component="/vehicle/data-detail",
+            keepalive=True,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="异常状态提醒",
+            path="expiry-alerts",
+            order=3,
+            parent_id=vehicle_parent.id,
+            icon="material-symbols:notifications-active",
+            is_hidden=False,
+            component="/vehicle/expiry-alerts",
+            keepalive=True,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="数据源管理",
+            path="data-source",
+            order=4,
+            parent_id=vehicle_parent.id,
+            icon="material-symbols:cloud-sync",
+            is_hidden=False,
+            component="/vehicle/data-source",
+            keepalive=True,
+        ),
+    ]
+    await Menu.bulk_create(vehicle_children)
+
 async def init_menus() -> None:
     """初始化菜单"""
     menus = await Menu.exists()
@@ -359,33 +421,10 @@ async def init_menus() -> None:
         await Menu.bulk_create(children_menu)
         # 创建测试路线菜单
         await _create_test_route_menus()
-        await Menu.create(
-            menu_type=MenuType.MENU,
-            name="一级菜单",
-            path="/top-menu",
-            order=2,
-            parent_id=0,
-            icon="material-symbols:featured-play-list-outline",
-            is_hidden=False,
-            component="/top-menu",
-            keepalive=False,
-            redirect="",
-        )
         await _create_ecu_menus()
 
-        # 车辆管理菜单（不展开子菜单，主页面内Tab切换）
-        await Menu.create(
-            menu_type=MenuType.MENU,
-            name="车辆管理",
-            path="/vehicle",
-            order=3,
-            parent_id=0,
-            icon="mdi:car-multiple",
-            is_hidden=False,
-            component="/vehicle",
-            keepalive=True,
-            redirect="",
-        )
+        # 车辆管理目录（4 个子菜单）
+        await _create_vehicle_menus()
 
         # 外委管理目录
         contractor_parent = await Menu.create(
@@ -523,6 +562,36 @@ async def init_menus() -> None:
         version_menu = await Menu.get_or_none(path="/versionIndex")
         if not version_menu:
             await _create_version_menus()
+
+        # 车辆管理菜单迁移：旧 MENU(Tab 容器) → CATALOG + 4 子菜单
+        vehicle_menu = await Menu.get_or_none(path="/vehicle")
+        if vehicle_menu:
+            if vehicle_menu.component == "/vehicle":
+                vehicle_menu.menu_type = MenuType.CATALOG
+                vehicle_menu.component = "Layout"
+                vehicle_menu.redirect = "/vehicle/task-status"
+                vehicle_menu.keepalive = False
+                await vehicle_menu.save()
+            vehicle_children = [
+                ("车辆任务状态", "task-status", 1, "material-symbols:task-alt", "/vehicle/task-status"),
+                ("车辆数据详情", "data-detail", 2, "material-symbols:table-rows", "/vehicle/data-detail"),
+                ("异常状态提醒", "expiry-alerts", 3, "material-symbols:notifications-active", "/vehicle/expiry-alerts"),
+                ("数据源管理", "data-source", 4, "material-symbols:cloud-sync", "/vehicle/data-source"),
+            ]
+            for name, path, order, icon, component in vehicle_children:
+                exists = await Menu.filter(path=path, parent_id=vehicle_menu.id).exists()
+                if not exists:
+                    await Menu.create(
+                        menu_type=MenuType.MENU,
+                        name=name,
+                        path=path,
+                        order=order,
+                        parent_id=vehicle_menu.id,
+                        icon=icon,
+                        is_hidden=False,
+                        component=component,
+                        keepalive=True,
+                    )
 
 async def init_apis():
     apis = await api_controller.model.exists()

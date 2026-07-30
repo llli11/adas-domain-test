@@ -38,7 +38,7 @@ const projectGroups = computed(() => {
 </script>
 
 <template>
-  <CommonPage show-footer title="状态看板">
+  <CommonPage show-footer :show-header="false" title="状态看板">
     <template #action>
       <NButton type="primary" @click="loadData">
         刷新

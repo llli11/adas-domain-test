@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue'
-import { NTag, NSelect, NInput, NButton, NEmpty, useMessage } from 'naive-ui'
+import { NTag, NSelect, NInput, NButton, NEmpty, NSpin, useMessage } from 'naive-ui'
 import api from '@/api'
 import TheIcon from '@/components/icon/TheIcon.vue'
 import VehicleTaskDetail from './detail.vue'
@@ -122,13 +122,29 @@ function onSaved(vehicle) {
 
 function getStatusType(status) { return statusColorMap[status] || 'default' }
 
+const syncing = ref(false)
+async function autoSyncFromFeishu() {
+  if (localStorage.getItem('vehicle_auto_sync_enabled') !== 'true') return
+  syncing.value = true
+  try {
+    const res = await api.syncFromFeishu()
+    if (res.data?.success) $message.success(`同步完成: 新增${res.data.created || 0} 更新${res.data.updated || 0}`)
+  } catch (e) {
+    console.error(e)
+  } finally {
+    syncing.value = false
+  }
+}
+
 onMounted(() => {
+  autoSyncFromFeishu()
   fetchData()
 })
 </script>
 
 <template>
   <div class="task-status-root">
+      <div v-if="syncing" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:8px;background:#e8f5e9;color:#2e7d32;font-size:13px"><NSpin size="small" /> 正在从飞书同步数据...</div>
       <!-- 筛选栏 -->
       <div class="filter-bar">
         <div class="filter-left">

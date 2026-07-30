@@ -1,5 +1,5 @@
 <template>
-<CommonPage class="page-wrap">
+<CommonPage class="page-wrap" :show-header="false">
   <div class="title-bar">
     <h2 class="title">版本指标管理</h2>
     <NSpace>
@@ -8,7 +8,7 @@
     </NSpace>
   </div>
 
-  <NCard v-if="hasFilter" title="基础指标数据" class="mb-3">
+  <NCard v-if="hasFilter" title="基础指标数据" size="small" class="mb-3">
     <div class="info-row">
       <span><b>项目类型：</b>{{ getLabelById(projectTypes, viewQuery.projectId) }}</span>
       <span><b>车型：</b>{{ getLabelById(carModels, viewQuery.carId) }}</span>
@@ -16,7 +16,7 @@
     </div>
   </NCard>
 
-  <NCard class="mt-1" title="指标数据">
+  <NCard class="mt-1" title="指标数据" size="small">
     <div v-if="loadingSavedData" class="text-center py-6">加载中...</div>
     <div v-else-if="!hasFilter">
       <NEmpty description="请点击右上角【查看】筛选数据" />
@@ -438,7 +438,7 @@ async function loadPageFilterData() {
 
 <style scoped>
 .title-bar {display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
-.title {margin:0;font-size:22px;font-weight:500;}
+.title {margin:0;font-size:18px;font-weight:400;}
 .info-row {display:flex;gap:32px;flex-wrap:wrap;}
 .cate-block {margin-bottom:20px;border-bottom:1px solid #eee;padding-bottom:16px;}
 .cate-title h3 {margin:6px 0 10px 0;font-size:17px;color:#222;}
@@ -454,14 +454,6 @@ async function loadPageFilterData() {
 </style>
 
 <style>
-/* 全局页面底色纯白 */
-html,body,#app,.n-layout,.n-layout-main,.n-layout-content,.n-page,.n-page__content {
-  background: #ffffff !important;
-}
-.n-layout-header,.n-layout-sider,.n-card {
-  background: #ffffff !important;
-}
-
 /* 遮罩层：仅背景页面变灰，弹窗不受影响 */
 .modal-force-white + .n-modal-mask {
   background: rgba(0,0,0,0.35) !important;
