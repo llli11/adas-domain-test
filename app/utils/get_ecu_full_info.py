@@ -290,13 +290,13 @@ def read_html_file(filepath: str) -> str:
 
 def parse_ecu_file(file_content: bytes) -> Dict[str, Any]:
     """
-    解析上传的ECU文件内容并返回JSON数据（包含 _did_map）
+    解析上传的ECU文件内容并返回JSON数据（包含 _did_map 和 _html_date）
 
     Args:
         file_content: 上传的文件字节内容
 
     Returns:
-        解析后的ECU数据字典，包含 _did_map
+        解析后的ECU数据字典，包含 _did_map 和 _html_date
     """
     try:
         html_content = file_content.decode("utf-8")
@@ -313,7 +313,19 @@ def parse_ecu_file(file_content: bytes) -> Dict[str, Any]:
         return {"error": "未能从文件中提取到ECU数据"}
 
     ecu_data['_did_map'] = extractor.get_did_description_map()
+    ecu_data['_html_date'] = _extract_html_date(html_content)
     return ecu_data
+
+
+def _extract_html_date(html_content: str) -> Optional[str]:
+    """从 HTML 中提取 Date/日期 时间，格式: YYYY-MM-DD HH:MM:SS"""
+    soup = BeautifulSoup(html_content, 'html.parser')
+    for h5 in soup.find_all('h5', class_='subTitle'):
+        text = h5.get_text(strip=True)
+        m = re.match(r'(?:Date|日期)[：:]\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', text)
+        if m:
+            return m.group(1)
+    return None
 
 
 def get_ecu_data_from_html(html_content: str) -> Dict[str, Dict[str, Any]]:

@@ -64,6 +64,9 @@ async def update_ecu_info(vin: str = Form(...), file: UploadFile = File(...)) ->
     if "error" in ecu_data:
         raise HTTPException(status_code=400, detail=ecu_data["error"])
 
+    html_date_str = ecu_data.pop("_html_date", None)
+    html_date = datetime.strptime(html_date_str, "%Y-%m-%d %H:%M:%S") if html_date_str else datetime.now()
+
     existing = await ReleaseInfo.get_or_none(vin=vin)
 
     has_changed = False
@@ -77,7 +80,7 @@ async def update_ecu_info(vin: str = Form(...), file: UploadFile = File(...)) ->
                     vin=vin,
                     ecu_info=existing.ecu_info,
                     data_source=existing.data_source,
-                    modified_at=datetime.now(),
+                    modified_at=html_date,
                 )
 
                 count = await ReleaseInfoHistory.filter(vin=vin).count()
@@ -88,13 +91,17 @@ async def update_ecu_info(vin: str = Form(...), file: UploadFile = File(...)) ->
                     await ReleaseInfoHistory.filter(vin=vin).exclude(id__in=keep_ids).delete()
 
                 existing.ecu_info = ecu_data
-                existing.modified_at = datetime.now()
+                existing.modified_at = html_date
+                existing.updated_at = html_date
                 await existing.save()
             else:
                 existing.ecu_info = ecu_data
                 await existing.save()
         else:
-            await ReleaseInfo.create(vin=vin, ecu_info=ecu_data)
+            await ReleaseInfo.create(
+                vin=vin, ecu_info=ecu_data,
+                created_at=html_date, updated_at=html_date,
+            )
 
     return {"code": 200, "data": {"message": "更新成功", "vin": vin}, "msg": "OK"}
 
