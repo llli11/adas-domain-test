@@ -1,6 +1,7 @@
 <script setup>
-import { onMounted, ref, h } from 'vue'
+import { onMounted, onBeforeUnmount, ref, h, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { reverseGeocode } from '@/utils/reverseGeocode'
 import {
   NDataTable,
   NButton,
@@ -17,9 +18,13 @@ import {
   NGrid,
   NGi,
   NDatePicker,
+  NPopconfirm,
+  NDivider,
 } from 'naive-ui'
 import api from '@/api'
 import TheIcon from '@/components/icon/TheIcon.vue'
+import { notifyVehicleDataChanged } from '@/utils/vehicleSync'
+import { formatRate } from '@/utils/common/common'
 
 defineOptions({ name: '车辆数据详情' })
 
@@ -29,9 +34,15 @@ const $message = useMessage()
 // 表格数据
 const loading = ref(false)
 const tableData = ref([])
+const checkedRowKeys = ref([])
 const page = ref(1)
 const pageSize = ref(20)
 const itemCount = ref(0)
+const tableMaxHeight = ref(400)
+
+function calcTableHeight() {
+  tableMaxHeight.value = Math.max(300, window.innerHeight - 200)
+}
 
 // 详情视图（点击行 / 点击编辑按钮 统一行为）
 const showDetail = ref(false)
@@ -43,11 +54,80 @@ const isCreating = ref(false)  // 新增模式 vs 编辑模式
 const editForm = ref({})
 const saving = ref(false)
 
-// 搜索条件
-const searchVN = ref('')
-const searchBorrower = ref('')
-const searchStatus = ref(null)
-const searchModel = ref('')
+// 部门筛选
+const filterDeptL1 = ref(null)  // 显示全部
+const filterDeptL2 = ref(null)
+const deptL1Options = ref([])
+const deptL2Options = ref([])
+
+// 全字段筛选
+const fieldOptions = ref([
+  { label: '车辆VN', value: 'vn' },
+  { label: '车辆编号', value: 'vehicle_code' },
+  { label: '车型项目', value: 'vehicle_model' },
+  { label: '动力类型', value: 'power_type' },
+  { label: '颜色', value: 'color' },
+  { label: '车辆阶段', value: 'vehicle_phase' },
+  { label: '车型配置', value: 'vehicle_model_config' },
+  { label: '车辆状态', value: 'vehicle_status' },
+  { label: '车辆状态备注', value: 'vehicle_status_note' },
+  { label: '任务状态', value: 'task_status' },
+  { label: '试验任务', value: 'test_task' },
+  { label: '测试人员', value: 'tester' },
+  { label: '驾驶人员', value: 'driver' },
+  { label: '借用人', value: 'borrower' },
+  { label: '借车人账号', value: 'borrower_account' },
+  { label: '借车人电话', value: 'borrower_phone' },
+  { label: '一级部门', value: 'dept_l1' },
+  { label: '二级部门', value: 'dept_l2' },
+  { label: '出差状态', value: 'travel_status' },
+  { label: '试验城市', value: 'test_city' },
+  { label: '车辆所在省', value: 'province' },
+  { label: '车辆所在市', value: 'city' },
+  { label: '详细地址', value: 'address_detail' },
+  { label: '保险区域', value: 'insurance_area' },
+  { label: '临牌区域', value: 'temp_plate_area' },
+  { label: '临牌信息', value: 'temp_plate_info' },
+  { label: '钥匙位置', value: 'key_location' },
+  { label: '车管', value: 'vehicle_manager' },
+  { label: '出门单', value: 'exit_permit' },
+  { label: '停车位', value: 'parking_spot' },
+  { label: '是否监控', value: 'is_monitored' },
+  { label: '监控方式', value: 'monitor_method' },
+  { label: '电池包状态', value: 'battery_pack_status' },
+  { label: '是否VIN最早', value: 'is_first_vin_record' },
+  { label: '改制中', value: 'is_under_modification' },
+  { label: '数据来源', value: 'data_source' },
+])
+const searchField1 = ref(null)
+const searchFieldValue1 = ref(null)
+const searchFieldValueOptions1 = ref([])
+const valueLoading1 = ref(false)
+
+// 值选择器远程搜索防抖
+let valueSearchTimer = null
+
+function onFieldValueSearch(query) {
+  if (valueSearchTimer) clearTimeout(valueSearchTimer)
+  valueSearchTimer = setTimeout(async () => {
+    if (!searchField1.value) return
+    valueLoading1.value = true
+    try {
+      const res = await api.getFieldValues({ field: searchField1.value, keyword: query || undefined })
+      searchFieldValueOptions1.value = (res.data?.values || []).map(val => ({ label: val, value: val }))
+    } catch (e) {
+      console.error('[data-detail] field value search failed:', e)
+    } finally {
+      valueLoading1.value = false
+    }
+  }, 300)
+}
+
+function onField1Change(v) {
+  searchFieldValue1.value = null
+  if (!v) { searchFieldValueOptions1.value = []; return }
+  onFieldValueSearch('')
+}
 
 // 枚举选项
 const taskStatusOptions = [
@@ -97,114 +177,143 @@ function fmtDate(date) {
   return d.toISOString().slice(0, 10)
 }
 
-// ===================== 表格列定义 =====================
+// ===================== 表格列定义 — 34列对齐飞书小程序 =====================
 const columns = [
-  { title: 'VN', key: 'vn', width: 140, align: 'center' },
-  { title: '编号', key: 'vehicle_code', width: 95, align: 'center' },
-  { title: '车型', key: 'vehicle_model', width: 80, align: 'center' },
-  { title: '动力', key: 'power_type', width: 75, align: 'center' },
-  { title: '颜色', key: 'color', width: 60, align: 'center' },
-  {
-    title: '任务状态', key: 'task_status', width: 90, align: 'center',
-    render(row) { return h(NTag, { type: statusColorMap[row.task_status] || 'default', size: 'small', bordered: false, round: true }, { default: () => row.task_status || '' }) },
-  },
-  { title: '试验任务', key: 'test_task', width: 85, align: 'center' },
-  { title: '测试人员', key: 'tester', width: 75, align: 'center' },
-  { title: '驾驶人员', key: 'driver', width: 75, align: 'center' },
-  { title: '借用人', key: 'borrower', width: 75, align: 'center' },
-  { title: '临牌到期', key: 'temp_plate_expire_date', width: 90, align: 'center', render: (row) => fmtDate(row.temp_plate_expire_date) },
-  { title: '借用到期', key: 'borrow_expire_date', width: 90, align: 'center', render: (row) => fmtDate(row.borrow_expire_date) },
-  { title: '保险区域', key: 'insurance_area', width: 85, align: 'center' },
-  {
-    title: '出差', key: 'travel_status', width: 65, align: 'center',
+  { type: 'selection', width: 40, fixed: 'left' },
+  { title: 'VIN', key: 'vn', width: 170, fixed: 'left' },
+  { title: '车型项目', key: 'vehicle_model', width: 100, fixed: 'left' },
+  { title: '车辆阶段', key: 'vehicle_phase', width: 80 },
+  { title: '车辆编号', key: 'vehicle_code', width: 80 },
+  { title: '动力配置', key: 'power_type', width: 75 },
+  { title: '车型配置', key: 'vehicle_model_config', width: 100 },
+  { title: '电池包状态', key: 'battery_pack_status', width: 90 },
+  { title: '临牌信息', key: 'temp_plate_info', width: 110 },
+  { title: '临牌到期', key: 'temp_plate_expire_date', width: 105, render: (row) => fmtDate(row.temp_plate_expire_date) },
+  { title: '临牌区域', key: 'temp_plate_area', width: 180 },
+  { title: '借车人', key: 'borrower', width: 70 },
+  { title: '电话', key: 'borrower_phone', width: 110 },
+  { title: '二级部门', key: 'dept_l2', width: 80 },
+  { title: '一级部门', key: 'dept_l1', width: 80 },
+  { title: '借车时间', key: 'borrow_time', width: 85 },
+  { title: '预计归还时间', key: 'borrow_expire_date', width: 100, render: (row) => fmtDate(row.borrow_expire_date) },
+  { title: '车辆所在省', key: 'province', width: 90 },
+  { title: '车辆所在市', key: 'city', width: 90 },
+  { title: '详细地址', key: 'address_detail', width: 180 },
+  { title: '最后更新时间', key: 'updated_at', width: 100, render: (row) => fmtDate(row.updated_at) },
+  { title: '7日利用率', key: 'borrower_7day_rate', width: 85, render: (row) => formatRate(row.borrower_7day_rate) },
+  { title: '停车位', key: 'parking_spot', width: 70 },
+  { title: '车辆状态', key: 'vehicle_status', width: 75 },
+  { title: '车管', key: 'vehicle_manager', width: 65 },
+  { title: '改制中', key: 'is_under_modification', width: 65 },
+  { title: '任务状态', key: 'task_status', width: 85 },
+  { title: '试验任务', key: 'test_task', width: 80 },
+  { title: '测试人员', key: 'tester', width: 70 },
+  { title: '驾驶人员', key: 'driver', width: 70 },
+  { title: '出差状态', key: 'travel_status', width: 65,
     render(row) { if (!row.travel_status) return ''; return h(NTag, { type: travelStatusColorMap[row.travel_status] || 'default', size: 'small', bordered: false, round: true }, { default: () => row.travel_status }) },
   },
-  { title: '城市', key: 'test_city', width: 70, align: 'center' },
-  { title: '出门单', key: 'exit_permit', width: 85, align: 'center' },
-  { title: '纬度', key: 'latitude', width: 65, align: 'center', render: (row) => row.latitude != null ? row.latitude.toFixed(4) : '' },
-  { title: '经度', key: 'longitude', width: 65, align: 'center', render: (row) => row.longitude != null ? row.longitude.toFixed(4) : '' },
-  { title: '停车位', key: 'parking_spot', width: 70, align: 'center' },
-  { title: '来源', key: 'data_source', width: 55, align: 'center',
+  { title: '试验城市', key: 'test_city', width: 80 },
+  { title: '出门单', key: 'exit_permit', width: 75 },
+  { title: '来源', key: 'data_source', width: 55,
     render(row) { return h(NTag, { type: 'info', size: 'small', bordered: false }, { default: () => dataSourceLabelMap[row.data_source] || row.data_source || '' }) },
   },
-  {
-    title: '操作', key: 'actions', width: 45, align: 'center',
+  { title: '操作', key: 'actions', width: 45, fixed: 'right',
     render(row) { return h(NButton, { size: 'tiny', text: true, type: 'primary', onClick: (e) => { e.stopPropagation(); handleRowClick(row) } }, { default: () => '编辑' }) },
   },
 ]
 
-// ===================== 点击行 / 编辑按钮 → 统一打开详情面板 =====================
+// 详情面板字段定义
+const taskFields = [
+  { key: 'task_status', label: '任务状态', type: 'select' },
+  { key: 'test_task', label: '试验任务', type: 'select' },
+  { key: 'tester', label: '测试人员', type: 'input' },
+  { key: 'driver', label: '驾驶人员', type: 'input' },
+  { key: 'travel_status', label: '出差状态', type: 'select' },
+  { key: 'test_city', label: '试验城市', type: 'input' },
+  { key: 'exit_permit', label: '出门单', type: 'input' },
+  { key: 'parking_spot', label: '停车位', type: 'input' },
+  { key: 'location_info', label: '位置信息', type: 'input' },
+  { key: 'latitude', label: '纬度', type: 'input' },
+  { key: 'longitude', label: '经度', type: 'input' },
+]
+const vehicleInfoFields = [
+  { key: 'vn', label: 'VIN' }, { key: 'vehicle_code', label: '车辆编号' },
+  { key: 'vehicle_model', label: '车型项目' }, { key: 'power_type', label: '动力类型' },
+  { key: 'vehicle_phase', label: '车辆阶段' }, { key: 'vehicle_model_config', label: '车型配置' },
+  { key: 'color', label: '颜色' }, { key: 'vehicle_status', label: '车辆状态' },
+  { key: 'vehicle_status_note', label: '状态备注' }, { key: 'has_controlled_items', label: '管制物品' },
+  { key: 'borrower', label: '借用人' }, { key: 'borrower_account', label: '借车人账号' },
+  { key: 'borrower_id', label: '借车人ID' }, { key: 'borrower_phone', label: '电话' },
+  { key: 'borrow_time', label: '借车时间' }, { key: 'borrow_expire_date', label: '预计归还' },
+  { key: 'borrow_days', label: '借用天数' }, { key: 'temp_plate_expire_date', label: '临牌到期' },
+  { key: 'temp_plate_area', label: '临牌区域' }, { key: 'temp_plate_valid_area', label: '临牌有效区域' },
+  { key: 'temp_plate_info', label: '临牌信息' }, { key: 'temp_plate_insurance_count', label: '办理次数' },
+  { key: 'insurance_area', label: '保险区域' }, { key: 'key_location', label: '钥匙位置' },
+  { key: 'vehicle_manager', label: '车管' }, { key: 'vehicle_manager_id', label: '车管ID' },
+  { key: 'parking_spot', label: '停车位' }, { key: 'dept_l1', label: '一级部门' },
+  { key: 'dept_l2', label: '二级部门' }, { key: 'province', label: '所在省' },
+  { key: 'city', label: '所在市' }, { key: 'address_detail', label: '详细地址' },
+  { key: 'storage_days', label: '在库时长' }, { key: 'qr_code', label: '二维码' },
+  { key: 'is_monitored', label: '是否监控' }, { key: 'monitor_method', label: '监控方式' },
+  { key: 'is_first_vin_record', label: '是否VIN最早' }, { key: 'engine_no', label: '发动机号' },
+  { key: 'battery_pack_status', label: '电池包状态' }, { key: 'battery_pack_trace', label: '电池包溯源码' },
+  { key: 'battery_pack_part_no', label: '电池包零件号' }, { key: 'battery_pack_rated', label: '电池包额定电量' },
+  { key: 'front_motor_no', label: '前电机号' }, { key: 'rear_motor_no', label: '后电机号' },
+  { key: 'trial_plan', label: '试验策划' }, { key: 'trial_plan_id', label: '试验策划ID' },
+  { key: 'borrower_7day_rate', label: '7日利用率', render: formatRate },
+  { key: 'data_source', label: '数据来源' },
+  { key: 'test_date', label: '试验日期' },
+]
+
+const visibleTaskFields = computed(() => {
+  if (!selectedVehicle.value) return []
+  return taskFields.filter(f => selectedVehicle.value[f.key] != null && selectedVehicle.value[f.key] !== '')
+})
+const visibleVehicleFields = computed(() => {
+  if (!selectedVehicle.value) return []
+  return vehicleInfoFields.filter(f => selectedVehicle.value[f.key] != null && selectedVehicle.value[f.key] !== '')
+})
 function handleRowClick(row) {
   selectedVehicle.value = { ...row }
   editMode.value = false
   isCreating.value = false
   showDetail.value = true
+  // 有经纬度时自动显示行政位置
+  if (row.latitude != null && row.longitude != null) {
+    reverseGeocode(row.latitude, row.longitude).then(addr => {
+      if (addr && selectedVehicle.value) selectedVehicle.value.location_info = addr
+    })
+  }
 }
 
-// ===================== 新增车辆 =====================
 function handleAdd() {
-  const now = new Date()
-  editForm.value = {
-    id: null,
-    vn: '',
-    vehicle_code: '',
-    vehicle_model: '',
-    power_type: null,
-    color: '',
-    has_controlled_items: '',
-    borrower: '',
-    borrow_expire_date: null,
-    temp_plate_expire_date: null,
-    insurance_area: '',
-    test_date: null,
-    task_status: null,
-    test_task: null,
-    tester: '',
-    driver: '',
-    travel_status: null,
-    test_city: '',
-    exit_permit: '',
-    parking_spot: '',
-    location_info: '',
-    latitude: '',
-    longitude: '',
-    data_source: 'manual',
-  }
+  editForm.value = buildEmptyForm()
   selectedVehicle.value = null
   isCreating.value = true
   editMode.value = true
   showDetail.value = true
 }
 
+function buildEmptyForm() {
+  const form = { id: null }
+  const allFields = [...taskFields, ...vehicleInfoFields]
+  allFields.forEach(f => { form[f.key] = f.key.endsWith('_date') ? null : '' })
+  form.data_source = 'manual'
+  return form
+}
+
 // ===================== 内联详情编辑 =====================
 function startEdit() {
   const v = selectedVehicle.value
-  editForm.value = {
-    id: v.id,
-    vn: v.vn,
-    vehicle_code: v.vehicle_code,
-    vehicle_model: v.vehicle_model,
-    power_type: v.power_type,
-    color: v.color,
-    has_controlled_items: v.has_controlled_items || '',
-    borrower: v.borrower || '',
-    borrow_expire_date: v.borrow_expire_date ? new Date(v.borrow_expire_date).getTime() : null,
-    temp_plate_expire_date: v.temp_plate_expire_date ? new Date(v.temp_plate_expire_date).getTime() : null,
-    insurance_area: v.insurance_area || '',
-    test_date: v.test_date ? new Date(v.test_date).getTime() : null,
-    task_status: v.task_status || null,
-    test_task: v.test_task || null,
-    tester: v.tester || '',
-    driver: v.driver || '',
-    travel_status: v.travel_status || null,
-    test_city: v.test_city || '',
-    exit_permit: v.exit_permit || '',
-    parking_spot: v.parking_spot || '',
-    location_info: v.location_info || '',
-    latitude: v.latitude != null ? String(v.latitude) : '',
-    longitude: v.longitude != null ? String(v.longitude) : '',
-    data_source: v.data_source || 'manual',
-  }
+  const form = { id: v.id }
+  const allFields = [...taskFields, ...vehicleInfoFields]
+  allFields.forEach(f => {
+    const val = v[f.key]
+    if (f.key.endsWith('_date') && val) { form[f.key] = new Date(val).getTime() }
+    else if (f.key === 'latitude' || f.key === 'longitude') { form[f.key] = val != null ? String(val) : '' }
+    else { form[f.key] = val != null ? val : '' }
+  })
+  editForm.value = form
   editMode.value = true
 }
 
@@ -212,15 +321,21 @@ async function handleSave() {
   saving.value = true
   try {
     const data = { ...editForm.value }
-    // 日期转换
-    if (data.borrow_expire_date && typeof data.borrow_expire_date === 'number') data.borrow_expire_date = new Date(data.borrow_expire_date).toISOString().substring(0, 10)
-    if (data.temp_plate_expire_date && typeof data.temp_plate_expire_date === 'number') data.temp_plate_expire_date = new Date(data.temp_plate_expire_date).toISOString().substring(0, 10)
-    if (data.test_date && typeof data.test_date === 'number') data.test_date = new Date(data.test_date).toISOString().substring(0, 10)
-    if (data.latitude != null && data.latitude !== '') data.latitude = parseFloat(data.latitude)
-    else data.latitude = null
-    if (data.longitude != null && data.longitude !== '') data.longitude = parseFloat(data.longitude)
-    else data.longitude = null
-
+    if (!data.id) { $message.warning('车辆ID无效'); saving.value = false; return }
+    const allFields = [...taskFields, ...vehicleInfoFields]
+    allFields.forEach(f => {
+      if (f.key.endsWith('_date') && typeof data[f.key] === 'number') {
+        data[f.key] = new Date(data[f.key]).toISOString().substring(0, 10)
+      }
+    });
+    ['latitude','longitude','borrower_7day_rate'].forEach(k => {
+      if (data[k] != null && data[k] !== '') data[k] = parseFloat(data[k]); else data[k] = null
+    })
+    if (data.borrow_days != null && data.borrow_days !== '') data.borrow_days = parseInt(data.borrow_days); else data.borrow_days = null
+    // 有经纬度但没有行政位置时，逆地理编码
+    if (data.latitude != null && data.longitude != null && !data.location_info) {
+      data.location_info = await reverseGeocode(data.latitude, data.longitude)
+    }
     if (isCreating.value) {
       await api.createVehicle(data)
       $message.success('新增成功')
@@ -231,10 +346,10 @@ async function handleSave() {
     showDetail.value = false
     isCreating.value = false
     editMode.value = false
+    notifyVehicleDataChanged()
     fetchData()
-  } catch (e) {
-    $message.error(isCreating.value ? '新增失败' : '保存失败')
-  } finally { saving.value = false }
+  } catch (e) { $message.error(isCreating.value ? '新增失败' : '保存失败') }
+  finally { saving.value = false }
 }
 
 async function handleDelete() {
@@ -242,11 +357,34 @@ async function handleDelete() {
     await api.deleteVehicle({ vehicle_id: selectedVehicle.value.id })
     $message.success('删除成功')
     showDetail.value = false
+    notifyVehicleDataChanged()
     fetchData()
   } catch (e) {
     $message.error('删除失败')
   }
 }
+
+// ===================== 部门选项 =====================
+async function loadDeptOptions() {
+  try {
+    const res = await api.getFieldValues({ field: 'dept_l1' })
+    deptL1Options.value = (res.data?.values || []).map(v => ({ label: v, value: v }))
+  } catch (e) { console.error('[data-detail] loadDeptOptions failed:', e) }
+}
+async function updateDeptL2Options() {
+  try {
+    const res = await api.getFieldValues({ field: 'dept_l2' })
+    deptL2Options.value = (res.data?.values || []).map(v => ({ label: v, value: v }))
+  } catch (e) { console.error('[data-detail] updateDeptL2Options failed:', e) }
+}
+
+// 监听部门变更
+watch(filterDeptL1, () => { filterDeptL2.value = null; updateDeptL2Options(); handleSearch() })
+watch(filterDeptL2, () => { handleSearch() })
+// 监听字段选择
+watch(searchField1, (v) => onField1Change(v))
+// 选择值后自动触发搜索
+watch(searchFieldValue1, () => { handleSearch() })
 
 // ===================== 数据加载 =====================
 async function fetchData() {
@@ -255,11 +393,12 @@ async function fetchData() {
     const params = {
       page: page.value,
       page_size: pageSize.value,
+      dept_l1: filterDeptL1.value || undefined,
+      dept_l2: filterDeptL2.value || undefined,
     }
-    if (searchVN.value) params.vn = searchVN.value
-    if (searchBorrower.value) params.borrower = searchBorrower.value
-    if (searchStatus.value) params.task_status = searchStatus.value
-    if (searchModel.value) params.vehicle_model = searchModel.value
+    if (searchField1.value && searchFieldValue1.value) {
+      params.field1 = searchField1.value; params.value1 = searchFieldValue1.value
+    }
 
     const res = await api.getVehicleList(params)
     if (res.code === 200) {
@@ -273,6 +412,24 @@ async function fetchData() {
     loading.value = false
   }
 }
+
+const batchDeleting = ref(false)
+const hasChecked = computed(() => checkedRowKeys.value.length > 0)
+
+async function handleBatchDelete() {
+  if (checkedRowKeys.value.length === 0) { $message.warning('请先勾选要删除的数据'); return }
+  batchDeleting.value = true
+  try {
+    const res = await api.batchDeleteVehicles(checkedRowKeys.value)
+    $message.success('批量删除成功，共删除 ' + (res.data?.deleted || checkedRowKeys.value.length) + ' 条')
+    checkedRowKeys.value = []
+    notifyVehicleDataChanged()
+    fetchData()
+  } catch (e) { $message.error('批量删除失败') }
+  finally { batchDeleting.value = false }
+}
+
+function handleCheck(rowKeys) { checkedRowKeys.value = rowKeys }
 
 function handlePageChange(p) {
   page.value = p
@@ -291,16 +448,26 @@ function handleSearch() {
 }
 
 function handleReset() {
-  searchVN.value = ''
-  searchBorrower.value = ''
-  searchStatus.value = null
-  searchModel.value = ''
+  filterDeptL1.value = null; filterDeptL2.value = null; deptL2Options.value = []
+  searchField1.value = null; searchFieldValue1.value = null; searchFieldValueOptions1.value = []
   page.value = 1
+  checkedRowKeys.value = []
   fetchData()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  calcTableHeight()
+  window.addEventListener('resize', calcTableHeight)
+  await loadDeptOptions()
   fetchData()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', calcTableHeight)
+  showDetail.value = false
+  selectedVehicle.value = null
+  editMode.value = false
+  isCreating.value = false
 })
 </script>
 
@@ -309,57 +476,46 @@ onMounted(() => {
     <!-- 搜索筛选栏 -->
     <div class="search-bar">
       <div class="search-left">
-        <NInput
-          v-model:value="searchVN"
-          placeholder="车辆 VN"
-          clearable
-          style="width: 130px"
-          @keypress.enter="handleSearch"
-        >
-          <template #prefix>
-            <TheIcon icon="material-symbols:search" :size="17" />
-          </template>
-        </NInput>
-        <NInput
-          v-model:value="searchBorrower"
-          placeholder="借用人"
-          clearable
-          style="width: 120px"
-          @keypress.enter="handleSearch"
-        />
+        <span class="dept-label">部门：</span>
+        <NSelect v-model:value="filterDeptL1" :options="deptL1Options" placeholder="一级部门" clearable filterable style="width: 140px" />
+        <NSelect v-model:value="filterDeptL2" :options="deptL2Options" placeholder="二级部门" clearable filterable style="width: 140px" />
+        <span class="dept-sep" />
+        <NSelect v-model:value="searchField1" :options="fieldOptions" placeholder="全字段搜索" clearable filterable style="width: 150px" />
         <NSelect
-          v-model:value="searchStatus"
-          :options="taskStatusOptions"
-          placeholder="任务状态"
+          v-model:value="searchFieldValue1"
+          :options="searchFieldValueOptions1"
+          :loading="valueLoading1"
+          placeholder="输入关键字搜索值"
           clearable
-          style="width: 130px"
+          filterable
+          :filter="() => true"
+          @search="onFieldValueSearch"
+          style="width: 200px"
+          :disabled="!searchField1"
         />
-        <NInput
-          v-model:value="searchModel"
-          placeholder="车型项目"
-          clearable
-          style="width: 130px"
-          @keypress.enter="handleSearch"
-        />
-        <NButton type="primary" @click="handleSearch">
-          <template #icon>
-            <TheIcon icon="material-symbols:search" :size="17" />
-          </template>
+        <NButton type="primary" size="small" @click="handleSearch">
+          <template #icon><TheIcon icon="material-symbols:search" :size="16" /></template>
           搜索
         </NButton>
-        <NButton text @click="handleReset">
-          <template #icon>
-            <TheIcon icon="material-symbols:refresh" :size="16" />
-          </template>
-        </NButton>
+        <NButton size="small" @click="handleReset">重置</NButton>
+        <span class="data-total">共 {{ itemCount }} 条</span>
       </div>
       <div class="search-right">
-        <NButton type="primary" @click="handleAdd">
-          <template #icon>
-            <TheIcon icon="material-symbols:add" :size="17" />
-          </template>
-          新增数据
-        </NButton>
+        <NSpace>
+          <NPopconfirm @positive-click="handleBatchDelete">
+            <template #trigger>
+              <NButton type="error" size="small" :loading="batchDeleting" :disabled="!hasChecked" ghost>
+                <template #icon><TheIcon icon="material-symbols:delete-outline" :size="16" /></template>
+                批量删除{{ hasChecked ? '（' + checkedRowKeys.length + '）' : '' }}
+              </NButton>
+            </template>
+            确定要删除选中的 {{ checkedRowKeys.length }} 条数据吗？此操作不可恢复。
+          </NPopconfirm>
+          <NButton type="primary" size="small" @click="handleAdd">
+            <template #icon><TheIcon icon="material-symbols:add" :size="16" /></template>
+            新增数据
+          </NButton>
+        </NSpace>
       </div>
     </div>
 
@@ -373,9 +529,12 @@ onMounted(() => {
           :single-line="false"
           striped
           size="small"
+          :row-key="(row) => row.id"
+          :checked-row-keys="checkedRowKeys"
+          @update:checked-row-keys="handleCheck"
           :row-props="(row) => ({
             style: 'cursor: pointer;',
-            onClick: () => handleRowClick(row),
+            onClick: (e) => { if (e.button === 0 && !window.getSelection()?.toString()) handleRowClick(row) },
           })"
         >
           <template #empty>
@@ -399,7 +558,7 @@ onMounted(() => {
       />
     </div>
 
-    <!-- 详情面板（点击行 / 编辑按钮 统一入口，内联展示，不覆盖标签页） -->
+        <!-- 详情面板 — 分区显示 -->
     <div v-if="showDetail" class="detail-overlay">
       <div class="detail-panel-inline">
         <div class="detail-hdr">
@@ -414,91 +573,87 @@ onMounted(() => {
         </div>
         <div class="detail-bd">
           <!-- 查看模式 -->
-          <div v-if="!editMode" class="detail-grid">
-            <div class="dg-item"><span class="dg-label">车辆VN</span><span class="dg-val">{{ selectedVehicle?.vn }}</span></div>
-            <div class="dg-item"><span class="dg-label">车辆编号</span><span class="dg-val">{{ selectedVehicle?.vehicle_code }}</span></div>
-            <div class="dg-item"><span class="dg-label">车型项目</span><span class="dg-val">{{ selectedVehicle?.vehicle_model }}</span></div>
-            <div class="dg-item"><span class="dg-label">动力类型</span><span class="dg-val">{{ selectedVehicle?.power_type }}</span></div>
-            <div class="dg-item"><span class="dg-label">颜色</span><span class="dg-val">{{ selectedVehicle?.color }}</span></div>
-            <div class="dg-item"><span class="dg-label">管制物品</span><span class="dg-val">{{ selectedVehicle?.has_controlled_items || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">借用人</span><span class="dg-val">{{ selectedVehicle?.borrower || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">借用到期</span><span class="dg-val">{{ selectedVehicle?.borrow_expire_date || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">临牌到期</span><span class="dg-val">{{ selectedVehicle?.temp_plate_expire_date || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">保险区域</span><span class="dg-val">{{ selectedVehicle?.insurance_area || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">任务状态</span><span class="dg-val">{{ selectedVehicle?.task_status || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">试验任务</span><span class="dg-val">{{ selectedVehicle?.test_task || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">试验日期</span><span class="dg-val">{{ selectedVehicle?.test_date || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">测试人员</span><span class="dg-val">{{ selectedVehicle?.tester || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">驾驶人员</span><span class="dg-val">{{ selectedVehicle?.driver || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">出差状态</span><span class="dg-val">{{ selectedVehicle?.travel_status || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">试验城市</span><span class="dg-val">{{ selectedVehicle?.test_city || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">出门单</span><span class="dg-val">{{ selectedVehicle?.exit_permit || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">停车位</span><span class="dg-val">{{ selectedVehicle?.parking_spot || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">位置信息</span><span class="dg-val">{{ selectedVehicle?.location_info || '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">纬度</span><span class="dg-val">{{ selectedVehicle?.latitude != null ? selectedVehicle.latitude : '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">经度</span><span class="dg-val">{{ selectedVehicle?.longitude != null ? selectedVehicle.longitude : '--' }}</span></div>
-            <div class="dg-item"><span class="dg-label">数据来源</span><span class="dg-val">{{ selectedVehicle?.data_source || '--' }}</span></div>
-          </div>
-          <!-- 编辑模式 -->
-          <NForm v-else :model="editForm" label-placement="top" size="small">
-            <NGrid :cols="2" :x-gap="16">
-              <NGi><NFormItem label="车辆VN"><NInput v-model:value="editForm.vn" :disabled="!isCreating" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="车辆编号"><NInput v-model:value="editForm.vehicle_code" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="车型项目"><NInput v-model:value="editForm.vehicle_model" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="动力类型"><NInput v-model:value="editForm.power_type" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="颜色"><NInput v-model:value="editForm.color" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="管制物品"><NInput v-model:value="editForm.has_controlled_items" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="借用人"><NInput v-model:value="editForm.borrower" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="借用到期"><NDatePicker v-model:value="editForm.borrow_expire_date" type="date" /></NFormItem></NGi>
-              <NGi><NFormItem label="临牌到期"><NDatePicker v-model:value="editForm.temp_plate_expire_date" type="date" /></NFormItem></NGi>
-              <NGi><NFormItem label="保险区域"><NInput v-model:value="editForm.insurance_area" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="试验日期"><NDatePicker v-model:value="editForm.test_date" type="date" /></NFormItem></NGi>
-              <NGi><NFormItem label="任务状态"><NSelect v-model:value="editForm.task_status" :options="taskStatusOptions" :disabled="isCreating" /></NFormItem></NGi>
-              <NGi><NFormItem label="试验任务"><NInput v-model:value="editForm.test_task" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="测试人员"><NInput v-model:value="editForm.tester" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="驾驶人员"><NInput v-model:value="editForm.driver" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="出差状态"><NSelect v-model:value="editForm.travel_status" :options="[{label:'出差',value:'出差'},{label:'未出差',value:'未出差'}]" /></NFormItem></NGi>
-              <NGi><NFormItem label="试验城市"><NInput v-model:value="editForm.test_city" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="出门单"><NInput v-model:value="editForm.exit_permit" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="停车位"><NInput v-model:value="editForm.parking_spot" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="位置信息"><NInput v-model:value="editForm.location_info" :disabled="isCreating" placeholder="请输入" /></NFormItem></NGi>
-              <NGi><NFormItem label="纬度"><NInput v-model:value="editForm.latitude" placeholder="请输入" :disabled="isCreating" /></NFormItem></NGi>
-              <NGi><NFormItem label="经度"><NInput v-model:value="editForm.longitude" placeholder="请输入" :disabled="isCreating" /></NFormItem></NGi>
-              <NGi><NFormItem label="数据来源"><NInput v-model:value="editForm.data_source" disabled /></NFormItem></NGi>
+          <template v-if="!editMode">
+            <div class="sec-title">✏️ 任务状态信息</div>
+            <NGrid :cols="6" :x-gap="6">
+              <NGi v-for="f in taskFields" :key="f.key">
+                <div class="info-item"><span class="info-lbl">{{ f.label }}</span><span class="info-val">{{ selectedVehicle && selectedVehicle[f.key] != null ? selectedVehicle[f.key] : '--' }}</span></div>
+              </NGi>
             </NGrid>
-          </NForm>
+            <NDivider />
+            <div class="sec-title">🚗 车辆信息</div>
+            <NGrid :cols="6" :x-gap="6">
+              <NGi v-for="f in vehicleInfoFields" :key="f.key">
+                <div class="info-item"><span class="info-lbl">{{ f.label }}</span><span class="info-val">{{ selectedVehicle && selectedVehicle[f.key] != null ? (f.render ? f.render(selectedVehicle[f.key]) : selectedVehicle[f.key]) : '--' }}</span></div>
+              </NGi>
+            </NGrid>
+          </template>
+          <!-- 编辑模式 -->
+          <template v-else>
+            <div class="sec-title">✏️ 任务状态信息</div>
+            <NGrid :cols="4" :x-gap="6">
+              <NGi v-for="f in taskFields" :key="f.key">
+                <NFormItem :label="f.label" size="small">
+                  <NInput v-if="f.type==='input'" v-model:value="editForm[f.key]" size="small" :placeholder="'请输入'+f.label" />
+                  <NSelect v-else-if="f.type==='select'" v-model:value="editForm[f.key]" :options="f.key==='task_status' ? taskStatusOptions : f.key==='test_task' ? [{label:'城市NCA',value:'城市NCA'},{label:'高速NCA',value:'高速NCA'},{label:'泊车测试',value:'泊车测试'},{label:'L0L1',value:'L0L1'},{label:'用列点检',value:'用列点检'},{label:'车辆整备',value:'车辆整备'},{label:'静态测试',value:'静态测试'},{label:'内场测试',value:'内场测试'}] : [{label:'出差',value:'出差'},{label:'未出差',value:'未出差'}]" size="small" />
+                </NFormItem>
+              </NGi>
+            </NGrid>
+            <NDivider />
+            <div class="sec-title">🚗 车辆信息</div>
+            <NGrid :cols="4" :x-gap="6">
+              <NGi v-for="f in vehicleInfoFields" :key="f.key">
+                <NFormItem :label="f.label" size="small">
+                  <NInput v-if="f.key==='borrow_expire_date'||f.key==='temp_plate_expire_date'||f.key==='test_date'" type="date" v-model:value="editForm[f.key]" size="small" />
+                  <NInput v-else v-model:value="editForm[f.key]" size="small" />
+                </NFormItem>
+              </NGi>
+            </NGrid>
+          </template>
         </div>
       </div>
     </div>
   </div>
 </template>
-
 <style scoped>
-.data-detail-root { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
+.data-detail-root { display: flex; flex-direction: column; height: 100%; position: relative; overflow: hidden; }
+.dept-label { font-size: 12px; color: #999; white-space: nowrap; }
+.dept-sep { width: 1px; height: 24px; background: #e0e0e0; margin: 0 2px; }
+.data-total { font-size: 13px; color: #666; white-space: nowrap; margin-left: 4px; }
 
-.search-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; flex-shrink: 0; }
+.search-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; gap: 12px; flex-shrink: 0; background: #fff; padding: 8px 0 4px; }
 .search-left { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .search-right { flex-shrink: 0; }
-.hint-text { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #999; }
 
-.table-wrapper { flex: 1; overflow: auto; min-height: 0; max-height: calc(100vh - 256px); }
-
-:deep(.n-data-table td) { white-space: normal !important; word-break: break-all; }
+.table-wrapper { flex: 1; overflow: auto; min-height: 0; }
+:deep(.n-data-table-thead) { position: sticky; top: 0; z-index: 10; background: #fafafc; }
+:deep(.n-data-table td) { white-space: nowrap !important; overflow: hidden; text-overflow: ellipsis; }
+:deep(.n-data-table th) { white-space: nowrap !important; }
 :deep(.n-data-table .n-data-table-tbody tr) { cursor: pointer; }
 :deep(.n-data-table .n-data-table-tbody tr:hover) { background-color: #f0f7ff !important; }
 
-.pagination-bar {
-  display: flex; justify-content: flex-end; padding: 10px 0; flex-shrink: 0; margin-top: auto;
-}
+:deep(.n-data-table td:nth-child(1)), :deep(.n-data-table th:nth-child(1)) { position: sticky; left: 0; z-index: 5; background: #fff; }
+:deep(.n-data-table td:nth-child(1)::after), :deep(.n-data-table th:nth-child(1)::after) { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 1px; background: #e8eaed; }
+:deep(.n-data-table tr:nth-child(even) td:nth-child(1)) { background: #fafafc; }
+:deep(.n-data-table td:nth-child(2)), :deep(.n-data-table th:nth-child(2)) { position: sticky; left: 40px; z-index: 4; background: #fff; }
+:deep(.n-data-table td:nth-child(2)::after), :deep(.n-data-table th:nth-child(2)::after) { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 1px; background: #e8eaed; }
+:deep(.n-data-table tr:nth-child(even) td:nth-child(2)) { background: #fafafc; }
+:deep(.n-data-table td:nth-child(3)), :deep(.n-data-table th:nth-child(3)) { position: sticky; left: 210px; z-index: 3; background: #fff; }
+:deep(.n-data-table td:nth-child(3)::after), :deep(.n-data-table th:nth-child(3)::after) { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 1px; background: #e8eaed; }
+:deep(.n-data-table tr:nth-child(even) td:nth-child(3)) { background: #fafafc; }
+:deep(.n-data-table td:last-child), :deep(.n-data-table th:last-child) { position: sticky; right: 0; z-index: 2; background: #fff; }
+:deep(.n-data-table td:last-child::before), :deep(.n-data-table th:last-child::before) { content: ''; position: absolute; left: -1px; top: 0; bottom: 0; width: 1px; background: #e8eaed; }
+:deep(.n-data-table tr:nth-child(even) td:last-child) { background: #fafafc; }
 
-/* 内联详情面板 */
+.pagination-bar { display: flex; justify-content: flex-end; padding: 10px 0; flex-shrink: 0; margin-top: auto; }
+
 .detail-overlay { position: absolute; inset: 0; background: #fff; z-index: 10; display: flex; flex-direction: column; overflow: hidden; }
 .detail-panel-inline { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.detail-hdr { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #eee; font-size: 15px; font-weight: 600; background: #fafafa; flex-shrink: 0; }
-.detail-bd { flex: 1; overflow-y: auto; padding: 16px; }
-.detail-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.dg-item { background: #f8f9fb; padding: 10px 14px; border-radius: 8px; display: flex; flex-direction: column; gap: 3px; }
-.dg-label { font-size: 11px; color: #999; }
-.dg-val { font-size: 14px; color: #333; font-weight: 500; word-break: break-all; }
+.detail-hdr { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 14px; font-weight: 600; background: #fafafa; flex-shrink: 0; }
+.detail-bd { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.sec-title { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 2px solid #2080f0; }
+.info-item { background: #f0f6ff; padding: 5px 8px; border-radius: 4px; margin-bottom: 4px; }
+.info-lbl { font-size: 12px; color: #2080f0; display: block; margin-bottom: 1px; }
+.info-val { font-size: 14px; color: #1a1a1a; font-weight: 500; word-break: break-all; }
 .mt-40 { margin-top: 40px; }
 </style>

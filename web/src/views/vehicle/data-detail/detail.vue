@@ -1,6 +1,8 @@
 <script setup>
 import { onMounted, ref, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { reverseGeocode } from '@/utils/reverseGeocode'
+import { formatRate } from '@/utils/common/common'
 import {
   NButton,
   NTag,
@@ -104,6 +106,13 @@ async function loadVehicle() {
   try {
     const res = await api.getVehicleById({ vehicle_id: id })
     vehicle.value = res.data
+    // 有经纬度时显示行政位置
+    const v = vehicle.value
+    if (v?.latitude != null && v?.longitude != null) {
+      reverseGeocode(v.latitude, v.longitude).then(addr => {
+        if (addr && vehicle.value) vehicle.value.location_info = addr
+      })
+    }
   } catch (e) {
     console.error('获取车辆详情失败', e)
     $message.error('获取车辆详情失败')
@@ -140,6 +149,7 @@ async function handleSave() {
   saving.value = true
   try {
     const payload = { ...editForm.value }
+    if (!payload.id) { $message.warning('车辆ID无效'); saving.value = false; return }
     // 转换日期
     if (payload.borrow_expire_date && typeof payload.borrow_expire_date === 'number') {
       payload.borrow_expire_date = new Date(payload.borrow_expire_date).toISOString().slice(0, 10)
