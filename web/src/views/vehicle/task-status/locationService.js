@@ -5,14 +5,35 @@ let timer = null
 let vehicleId = null
 let onUpdate = null  // 回调：通知组件更新 UI
 
-async function reverseGeocode(lat, lng) {
+export function reverseGeocode(lat, lng) {
+  return _reverseGeocode(lat, lng)
+}
+
+async function _reverseGeocode(lat, lng) {
+  // 方案1：后端代理
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`)
-    const data = await res.json()
-    return data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`
-  } catch {
-    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    const res = await api.reverseGeocode(lat, lng)
+    const addr = res?.data?.address || ''
+    if (addr) return addr
+  } catch (e) {
+    console.warn('[Location] 后端逆地理编码失败:', e?.message || e)
   }
+  // 方案2：直连 Nominatim
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=zh`,
+      { signal: controller.signal }
+    )
+    clearTimeout(timeout)
+    const data = await res.json()
+    return data.display_name || ''
+  } catch (e) {
+    console.warn('[Location] 直连逆地理编码失败:', e?.message || e)
+  }
+  // 方案3：兜底 — 格式化的经纬度
+  return `(${lat.toFixed(4)}, ${lng.toFixed(4)})`
 }
 
 function doUpdate() {
@@ -21,19 +42,19 @@ function doUpdate() {
     async (pos) => {
       const lat = pos.coords.latitude
       const lng = pos.coords.longitude
-      const addr = await reverseGeocode(lat, lng)
+      const addr = await _reverseGeocode(lat, lng)
+      const payload = { id: vehicleId, latitude: lat, longitude: lng, location_info: addr }
+      if (!vehicleId) { console.warn('[Location] 车辆ID无效'); return }
       try {
-        await api.updateVehicle({
-          id: vehicleId,
-          latitude: lat,
-          longitude: lng,
-          location_info: addr,
-        })
-      } catch { /* silent */ }
+        const res = await api.updateVehicle(payload)
+        console.log('[Location] 已保存', { lat, lng, addr, res })
+      } catch (e) {
+        console.warn('[Location] API保存失败:', e.response?.data || e.message)
+      }
       if (onUpdate) onUpdate({ id: vehicleId, lat, lng, location_info: addr })
     },
-    () => {},
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    () => { console.warn('[Location] 定位失败，请检查浏览器定位权限') },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   )
 }
 
@@ -47,6 +68,7 @@ export function getLocatingVehicleId() {
 
 export function startLocation(id, updateCallback) {
   if (!navigator.geolocation) return false
+  if (!id) { console.warn('[Location] 车辆ID为空'); return false }
   vehicleId = id
   onUpdate = updateCallback
   doUpdate()

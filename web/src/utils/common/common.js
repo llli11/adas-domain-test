@@ -74,3 +74,16 @@ export function debounce(method, wait, immediate) {
     }
   }
 }
+
+/**
+ * @desc  格式化利用率百分比（保留一位小数）
+ * @param {number|null} val — 小数(0.156)或已为百分比数(15.6)
+ * @returns {string} "15.6%" 或 "--"
+ */
+export function formatRate(val) {
+  if (val == null || val === '') return '--'
+  const n = Number(val)
+  if (isNaN(n)) return '--'
+  const pct = n < 1 ? n * 100 : n
+  return pct.toFixed(1) + '%'
+}

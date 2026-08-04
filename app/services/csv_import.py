@@ -15,20 +15,62 @@ CSV_TEMPLATE_HEADERS = [
     "车型项目",
     "动力类型",
     "颜色",
+    "车辆阶段",
+    "车型配置",
+    "车辆状态",
+    "车辆状态备注",
     "任务状态",
     "试验任务",
     "测试人员",
     "驾驶人员",
     "借用人",
+    "借车人账号",
+    "借车人电话",
+    "借车时间",
+    "一级部门",
+    "二级部门",
     "临牌到期时间",
     "借用到期时间",
-    "保险区域",
+    "借用天数",
+    "临牌区域",
+    "临牌有效区域",
+    "临牌信息",
+    "临牌&保险办理次数",
     "出差状态",
     "试验城市",
     "出门单",
     "停车位",
+    "钥匙位置",
+    "车管",
+    "车管ID",
     "是否有管制物品",
     "试验日期",
+    "所在省",
+    "所在市",
+    "详细地址",
+    "是否监控",
+    "监控方式",
+    "7日利用率(%)",
+    "在库时长",
+    "试验策划",
+    "试验策划ID",
+    "保险区域",
+    "纬度",
+    "经度",
+    "位置信息",
+    "电池包状态",
+    "电池包溯源码",
+    "电池包零件号",
+    "电池包额定电量",
+    "发动机号",
+    "前电机号",
+    "后电机号",
+    "借车人ID",
+    "二维码",
+    "是否VIN最早记录",
+    "改制中",
+    "数据来源",
+    "飞书记录ID",
 ]
 
 # CSV字段映射 → Vehicle模型字段
@@ -38,20 +80,62 @@ CSV_FIELD_MAP = {
     "车型项目": "vehicle_model",
     "动力类型": "power_type",
     "颜色": "color",
+    "车辆阶段": "vehicle_phase",
+    "车型配置": "vehicle_model_config",
+    "车辆状态": "vehicle_status",
+    "车辆状态备注": "vehicle_status_note",
     "任务状态": "task_status",
     "试验任务": "test_task",
     "测试人员": "tester",
     "驾驶人员": "driver",
     "借用人": "borrower",
+    "借车人账号": "borrower_account",
+    "借车人电话": "borrower_phone",
+    "借车时间": "borrow_time",
+    "一级部门": "dept_l1",
+    "二级部门": "dept_l2",
     "临牌到期时间": "temp_plate_expire_date",
     "借用到期时间": "borrow_expire_date",
-    "保险区域": "insurance_area",
+    "借用天数": "borrow_days",
+    "临牌区域": "temp_plate_area",
+    "临牌有效区域": "temp_plate_valid_area",
+    "临牌信息": "temp_plate_info",
+    "临牌&保险办理次数": "temp_plate_insurance_count",
     "出差状态": "travel_status",
     "试验城市": "test_city",
     "出门单": "exit_permit",
     "停车位": "parking_spot",
+    "钥匙位置": "key_location",
+    "车管": "vehicle_manager",
+    "车管ID": "vehicle_manager_id",
     "是否有管制物品": "has_controlled_items",
     "试验日期": "test_date",
+    "所在省": "province",
+    "所在市": "city",
+    "详细地址": "address_detail",
+    "是否监控": "is_monitored",
+    "监控方式": "monitor_method",
+    "7日利用率(%)": "borrower_7day_rate",
+    "在库时长": "storage_days",
+    "试验策划": "trial_plan",
+    "试验策划ID": "trial_plan_id",
+    "保险区域": "insurance_area",
+    "纬度": "latitude",
+    "经度": "longitude",
+    "位置信息": "location_info",
+    "电池包状态": "battery_pack_status",
+    "电池包溯源码": "battery_pack_trace",
+    "电池包零件号": "battery_pack_part_no",
+    "电池包额定电量": "battery_pack_rated",
+    "发动机号": "engine_no",
+    "前电机号": "front_motor_no",
+    "后电机号": "rear_motor_no",
+    "借车人ID": "borrower_id",
+    "二维码": "qr_code",
+    "是否VIN最早记录": "is_first_vin_record",
+    "改制中": "is_under_modification",
+    "数据来源": "data_source",
+    "飞书记录ID": "feishu_record_id",
 }
 
 
@@ -94,10 +178,23 @@ def generate_csv_template() -> str:
     # 示例行：完整数据
     writer.writerow([
         "VN20250001", "4101#", "项目A", "纯电", "白",
+        "P1", "标配", "正常", "",
         "待开始", "城市NCA", "李四", "王五",
-        "张三", "2025-06-30", "2025-12-31", "华东",
-        "未出差", "上海", "EP2025001", "A-001",
+        "张三", "zhangsan", "13800138000", "2025-03-01",
+        "产品验证中心", "智驾域测试",
+        "2025-06-30", "2025-12-31", "30",
+        "湖北湖南", "湖北", "鄂A12345", "2",
+        "未出差", "武汉", "EP2025001", "A-001",
+        "门卫室", "王车管", "G001",
         "无", "2025-03-15",
+        "湖北", "武汉", "XX路XX号",
+        "是", "GPS",
+        "85", "180", "试验策划A", "TPL001",
+        "华东", "30.5", "114.1", "某停车场",
+        "正常", "BS001", "BP001", "50kWh",
+        "EN2025001", "FM001", "RM001",
+        "B001", "QR001", "是", "否",
+        "feishu", "rec_abc123",
     ])
     return output.getvalue()
 
@@ -117,7 +214,7 @@ def parse_csv_content(content: str) -> tuple[List[Dict[str, Any]], List[str]]:
 
             if vehicle_field in ("borrow_expire_date", "temp_plate_expire_date", "test_date"):
                 vehicle_data[vehicle_field] = _parse_date(raw_value)
-            elif vehicle_field in ("latitude", "longitude"):
+            elif vehicle_field in ("latitude", "longitude", "borrower_7day_rate"):
                 vehicle_data[vehicle_field] = _parse_float(raw_value)
             else:
                 vehicle_data[vehicle_field] = raw_value if raw_value else None
@@ -164,11 +261,11 @@ async def import_csv_to_db(content: str) -> Dict[str, Any]:
         vn = row.get("vn", "")
         try:
             existing = await vehicle_controller.get_by_vn(vn)
+            await vehicle_controller.upsert_by_vn(VehicleCreate(**row))
             if existing:
                 updated_count += 1
             else:
                 created_count += 1
-            await vehicle_controller.upsert_by_vn(VehicleCreate(**row))
         except Exception as e:
             msg = f"导入失败 VN={vn}: {str(e)}"
             import_errors.append(msg)

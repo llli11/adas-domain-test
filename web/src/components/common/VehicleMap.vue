@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 
+const emit = defineEmits(['marker-click'])
+
 const props = defineProps({
   markers: { type: Array, default: () => [] },
   height: { type: String, default: '100%' },
@@ -28,10 +30,10 @@ function loadLeaflet() {
     if (window.L) { resolve(); return }
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'
+    link.href = 'https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.min.css'
     document.head.appendChild(link)
     const script = document.createElement('script')
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'
+    script.src = 'https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.min.js'
     script.onload = () => resolve()
     document.head.appendChild(script)
   })
@@ -76,10 +78,7 @@ function updateMarkers(data) {
     })
     marker.bindTooltip(label, { permanent: true, direction: 'top', offset: [0, -10], className: 'vm-tooltip' })
     marker.on('click', () => {
-      L.popup()
-        .setLatLng([lat, lng])
-        .setContent(`<b>${label}</b><br>状态: ${item.task_status||'未知'}<br>任务: ${item.test_task||'--'}`)
-        .openOn(map)
+      emit('marker-click', item)
     })
     marker.addTo(map)
     bounds.extend([lat, lng])

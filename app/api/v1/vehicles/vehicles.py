@@ -2,7 +2,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Body, File, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, File, Query, UploadFile
 
 from app.controllers.vehicle import vehicle_controller
 from app.core.ctx import CTX_USER_ID
@@ -10,7 +10,6 @@ from app.log import logger
 from app.models.user_feishu_config import UserFeishuConfig
 from app.schemas.base import Success, SuccessExtra
 from app.schemas.vehicles import (
-    FeishuSyncConfig,
     VehicleCreate,
     VehicleUpdate,
     VehicleUpsert,
@@ -38,6 +37,15 @@ async def list_vehicles(
     vehicle_code: Optional[str] = Query(None, description="车辆编号"),
     data_source: Optional[str] = Query(None, description="数据来源"),
     keyword: Optional[str] = Query(None, description="关键词搜索"),
+    dept_l1: Optional[str] = Query(None, description="一级部门"),
+    dept_l2: Optional[str] = Query(None, description="二级部门"),
+    # 通用字段过滤（字段名+值下拉选择）
+    field1: Optional[str] = Query(None, description="过滤字段1"),
+    value1: Optional[str] = Query(None, description="过滤值1"),
+    field2: Optional[str] = Query(None, description="过滤字段2"),
+    value2: Optional[str] = Query(None, description="过滤值2"),
+    field3: Optional[str] = Query(None, description="过滤字段3"),
+    value3: Optional[str] = Query(None, description="过滤值3"),
 ):
     total, objs = await vehicle_controller.list_with_filter(
         page=page,
@@ -52,6 +60,10 @@ async def list_vehicles(
         vehicle_code=vehicle_code,
         data_source=data_source,
         keyword=keyword,
+        dept_l1=dept_l1, dept_l2=dept_l2,
+        field1=field1, value1=value1,
+        field2=field2, value2=value2,
+        field3=field3, value3=value3,
     )
     data = [await obj.to_dict() for obj in objs]
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
@@ -90,6 +102,25 @@ async def delete_vehicle(
     return Success(msg="删除成功")
 
 
+@router.delete("/batch-delete", summary="批量删除车辆")
+async def batch_delete_vehicles(
+    ids: list[int] = Body(..., description="车辆ID列表", embed=True),
+):
+    count = await vehicle_controller.batch_delete(ids=ids)
+    return Success(msg=f"批量删除成功，共删除 {count} 条", data={"deleted": count})
+
+
+@router.get("/field-values", summary="获取字段去重值（下拉联想用）")
+async def get_field_values(
+    field: str = Query(..., description="字段名（如 vn, borrower, test_city）"),
+    keyword: Optional[str] = Query(None, description="模糊过滤关键字"),
+):
+    values = await vehicle_controller.get_field_distinct_values(
+        field_name=field, keyword=keyword, limit=50
+    )
+    return Success(data={"field": field, "values": values})
+
+
 # ==================== Upsert 批量导入 ====================
 
 
@@ -106,11 +137,11 @@ async def upsert_vehicle(
     for item in items:
         try:
             existing = await vehicle_controller.get_by_vn(item.vn)
+            await vehicle_controller.upsert_by_vn(VehicleCreate(**item.model_dump()))
             if existing:
                 updated += 1
             else:
                 created += 1
-            await vehicle_controller.upsert_by_vn(VehicleCreate(**item.model_dump()))
         except Exception as e:
             errors.append(f"VN={item.vn}: {str(e)}")
             logger.error(f"[Vehicle Upsert] 导入失败 VN={item.vn}: {e}")
@@ -177,19 +208,63 @@ async def get_status_map():
 # ==================== 飞书同步（数据源1 + 数据源2） ====================
 
 
+# 内存中暂存最近一次同步结果，供前端轮询
+_last_sync_result: dict = {"success": False, "message": "尚未同步", "running": False}
+
+
 @router.post("/sync/feishu", summary="数据源1：从预置飞书表格同步")
-async def sync_from_feishu():
-    """从预置的飞书多维表格（试验车辆任务状态小程序）同步车辆数据
-    使用默认配置的 APP_ID/APP_SECRET/BASE_ID/TABLE_ID
-    """
+async def sync_from_feishu(background_tasks: BackgroundTasks):
+    """从预置的飞书多维表格（试验车辆任务状态小程序）同步车辆数据（后台异步执行）"""
+    global _last_sync_result
+    if _last_sync_result.get("running"):
+        return Success(data=_last_sync_result, msg="同步正在进行中，请稍后查看结果")
+
+    _last_sync_result = {"success": False, "message": "同步已启动，正在后台执行…", "running": True}
+
+    async def _do_sync():
+        global _last_sync_result
+        try:
+            logger.info("[Feishu Sync] 后台同步开始...")
+            result = await feishu_sync_service.sync_vehicles_from_feishu()
+            logger.info(f"[Feishu Sync] 后台同步结果: {result}")
+            _last_sync_result = {**result, "running": False}
+        except Exception as e:
+            logger.error(f"[Feishu Sync] 后台同步异常: {e}")
+            _last_sync_result = {"success": False, "message": f"同步异常: {str(e)}", "running": False}
+
+    background_tasks.add_task(_do_sync)
+    return Success(data=_last_sync_result, msg="同步任务已提交")
+
+
+@router.get("/sync/feishu/status", summary="查询同步状态")
+async def sync_status():
+    """获取最近一次同步结果"""
+    return Success(data=_last_sync_result, msg=_last_sync_result.get("message", ""))
+
+
+@router.get("/reverse-geocode", summary="逆地理编码（经纬度转地址）")
+async def reverse_geocode(
+    lat: float = Query(..., description="纬度"),
+    lng: float = Query(..., description="经度"),
+):
+    """通过 Nominatim 将经纬度转为行政地址"""
+    import httpx
     try:
-        logger.info("[Feishu Sync] 数据源1同步开始...")
-        result = await feishu_sync_service.sync_vehicles_from_feishu()
-        logger.info(f"[Feishu Sync] 数据源1同步结果: {result}")
-        return Success(data=result, msg=result.get("message", ""))
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params={
+                    "format": "json", "lat": lat, "lon": lng,
+                    "zoom": 18, "addressdetails": 1, "accept-language": "zh",
+                },
+                headers={"User-Agent": "VueFastAPIAdmin/1.0"},
+            )
+            data = resp.json()
+            addr = data.get("display_name", "")
+            return Success(data={"address": addr, "lat": lat, "lng": lng})
     except Exception as e:
-        logger.error(f"[Feishu Sync API] 同步异常: {e}")
-        return Success(code=500, msg=f"同步异常: {str(e)}", data={"success": False})
+        logger.warning(f"[ReverseGeocode] 失败: {e}")
+        return Success(data={"address": "", "lat": lat, "lng": lng})
 
 
 @router.post("/sync/feishu/config/save", summary="数据源2：保存用户飞书配置并自动同步")
@@ -288,7 +363,6 @@ async def feishu_health_check():
     """检查飞书API连接是否正常"""
     try:
         token = await feishu_sync_service.get_tenant_access_token()
-        await feishu_sync_service.http_client.aclose()
         return Success(data={"connected": True, "token_valid": True}, msg="飞书连接正常")
     except Exception as e:
         return Success(data={"connected": False, "token_valid": False, "error": str(e)}, msg=f"飞书连接失败: {str(e)}")

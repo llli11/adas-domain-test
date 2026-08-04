@@ -32,3 +32,6 @@ uv.lock
 ._.DS_Store
 sync_feishu.py
 web/pnpm-lock.yaml
+web/package-lock.json
+web/package.json
+web/pnpm-workspace.yaml

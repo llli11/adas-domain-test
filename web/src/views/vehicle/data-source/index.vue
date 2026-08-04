@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, onMounted, computed } from 'vue'
 import {
   NButton,
@@ -13,6 +13,7 @@ import {
 } from 'naive-ui'
 import api from '@/api'
 import TheIcon from '@/components/icon/TheIcon.vue'
+import { notifyVehicleDataChanged, getAutoSyncEnabled, setAutoSyncEnabled } from '@/utils/vehicleSync'
 
 defineOptions({ name: '数据源管理' })
 
@@ -22,12 +23,11 @@ const $message = useMessage()
 const dataSourceCounts = ref({ feishu: 0, csv: 0, manual: 0 })
 
 // ===== 自动同步开关 =====
-const AUTO_SYNC_KEY = 'vehicle_auto_sync_enabled'
-const autoSyncEnabled = ref(localStorage.getItem(AUTO_SYNC_KEY) === 'true')
+const autoSyncEnabled = ref(getAutoSyncEnabled())
 
 function handleAutoSyncToggle(value) {
   autoSyncEnabled.value = value
-  localStorage.setItem(AUTO_SYNC_KEY, String(value))
+  setAutoSyncEnabled(value)
   $message.info(value ? '已开启进入车辆管理时自动同步飞书数据' : '已关闭自动同步')
 }
 
@@ -233,7 +233,7 @@ const statCards = computed(() => [
               <TheIcon icon="material-symbols:cloud-sync" :size="20" style="color: #2080f0" />
             </div>
             <div>
-              <div class="source-card-title">"车辆任务状态小程序"车辆库数据</div>
+              <div class="source-card-title">试验管理-车辆管理数据库</div>
               <div class="source-card-subtitle">从预置飞书多维表格导入车辆数据</div>
             </div>
           </div>
