@@ -470,6 +470,8 @@ const allSummaryTableData = computed(() => {
   for (const [ecuName, result] of Object.entries(results)) {
     const ecuItem = ecuInfo.value[ecuName]
     const displayReason = result.reason === '本地无响应' ? '离线' : result.reason
+    // 离线且无基线软件版本的不显示
+    if (result.reason === '本地无响应' && !result.baselineVersion) continue
     data.push({
       ecu: ecuName,
       currentVersion: ecuItem?.[swDid] || '',
