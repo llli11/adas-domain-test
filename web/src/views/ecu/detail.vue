@@ -1294,7 +1294,7 @@ onMounted(() => {
       </NForm>
       <template #footer>
         <div style="display: flex; justify-content: flex-end">
-          <NButton type="info" :loading="onlineUpdateLoading" @click="handleOnlineUpdate">在线更新</NButton>
+          <NButton type="info" :loading="onlineUpdateLoading" disabled @click="handleOnlineUpdate">在线更新</NButton>
           <NButton style="margin-left: 12px" @click="updateModalVisible = false">取消</NButton>
           <NButton type="primary" style="margin-left: 12px" :loading="updateLoading" @click="handleUpdate">
             确认

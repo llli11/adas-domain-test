@@ -9,6 +9,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
 from app.models.ecu import ECUBaselineSelect, ECUIgnore, EcuOperationLog, ReleaseInfo, ReleaseInfoHistory, ReleaseTargetInfo
+from app.models.vehicle import Vehicle
 from app.settings.config import settings
 from app.utils.get_ecu_full_info import parse_ecu_file
 
@@ -19,20 +20,50 @@ PLAYW_TIMEOUT = 120  # 2 minutes
 
 
 @router.get("/list", summary="获取ECU列表")
-async def get_ecu_list(search: Optional[str] = None) -> Dict[str, Any]:
+async def get_ecu_list(
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> Dict[str, Any]:
     try:
-        q = ReleaseInfo.all().order_by("-updated_at")
         if search:
+            vehicle_vins = await Vehicle.filter(
+                Q(vn__contains=search) | Q(vehicle_code__contains=search)
+                | Q(vehicle_model__contains=search) | Q(borrower__contains=search)
+            ).values_list("vn", flat=True)
             q = ReleaseInfo.filter(
-                Q(vin__contains=search) | Q(remark__contains=search)
+                Q(vin__contains=search) | Q(remark__contains=search) | Q(vin__in=list(vehicle_vins))
             ).order_by("-updated_at")
-        results = await q.values(
+        else:
+            q = ReleaseInfo.all().order_by("-updated_at")
+
+        total = await q.count()
+        offset = (page - 1) * page_size
+        results = await q.offset(offset).limit(page_size).values(
             "id", "vin", "ecu_info", "data_source", "remark", "modified_at", "created_at", "updated_at"
         )
-        return {"code": 200, "data": results, "msg": "OK"}
+
+        # 批量查询当前页的车辆信息
+        vins = [r["vin"] for r in results]
+        vehicle_map = {}
+        if vins:
+            vehicles = await Vehicle.filter(vn__in=vins).values("vn", "vehicle_code", "vehicle_model", "borrower")
+            vehicle_map = {v["vn"]: v for v in vehicles}
+
+        merged = []
+        for r in results:
+            v = vehicle_map.get(r["vin"], {})
+            merged.append({
+                **r,
+                "vehicle_no": v.get("vehicle_code"),
+                "vehicle_model": v.get("vehicle_model"),
+                "user_name": v.get("borrower"),
+            })
+
+        return {"code": 200, "data": merged, "total": total, "msg": "OK"}
     except Exception as e:
         logger.error(f"ECU list error: {e}")
-        return {"code": 500, "data": [], "msg": f"数据库错误: {str(e)}"}
+        return {"code": 500, "data": [], "total": 0, "msg": f"数据库错误: {str(e)}"}
 
 
 @router.get("/detail/{vin}", summary="获取ECU详情")
@@ -40,6 +71,12 @@ async def get_ecu_detail(vin: str) -> Dict[str, Any]:
     record = await ReleaseInfo.get_or_none(vin=vin)
     if not record:
         raise HTTPException(status_code=404, detail="未找到该VIN的记录")
+
+    vehicle = await Vehicle.get_or_none(vn=vin)
+    vehicle_model = vehicle.vehicle_model if vehicle else None
+    vehicle_no = vehicle.vehicle_code if vehicle else None
+    user_name = vehicle.borrower if vehicle else None
+
     return {
         "code": 200,
         "data": {
@@ -51,6 +88,9 @@ async def get_ecu_detail(vin: str) -> Dict[str, Any]:
             "modified_at": record.modified_at,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
+            "vehicle_model": vehicle_model,
+            "vehicle_no": vehicle_no,
+            "user_name": user_name,
         },
         "msg": "OK",
     }

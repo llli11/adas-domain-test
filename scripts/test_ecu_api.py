@@ -80,8 +80,12 @@ class Tester:
         buf.seek(0)
         return buf
 
-    def _make_ecu_html(self, *, sw_version: str = "3.0.1") -> io.BytesIO:
-        html = f"""<html><body><table>
+    def _make_ecu_html(self, *, sw_version: str = "3.0.1", html_date: str = None) -> io.BytesIO:
+        if html_date is None:
+            html_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        html = f"""<html><body>
+<h5 class='subTitle'>Date：{html_date}</h5>
+<table>
 <tr><td>TEST_ECU</td><td>F100</td><td>零件号</td><td>TEST-PART-001</td></tr>
 <tr><td>TEST_ECU</td><td>F200</td><td>硬件版本</td><td>1.2.0</td></tr>
 <tr><td>TEST_ECU</td><td>F300</td><td>软件版本</td><td>{sw_version}</td></tr>
@@ -185,12 +189,18 @@ class Tester:
     async def test_list_ecus(self):
         name = "GET  /ecu/list  ECU\u5217\u8868"
         try:
-            resp = await self.request("GET", self._path("ecu", "list"))
+            resp = await self.request("GET", self._path("ecu", "list"), params={"page": 1, "page_size": 20})
             body = resp.json()
             if resp.status_code == 200 and body.get("code") == 200:
                 cnt = len(body["data"])
+                total = body.get("total", 0)
                 found = any(e["vin"] == self.vin for e in body["data"])
-                self.ok(name, f"\u5171{cnt}\u6761  \u6d4b\u8bd5ECU{'[FOUND]' if found else '[NOT_FOUND]'}")
+                # 验证 vehicle 字段是否存在
+                has_vehicle_fields = all(
+                    "vehicle_no" in e and "vehicle_model" in e and "user_name" in e
+                    for e in body["data"]
+                ) if body["data"] else True
+                self.ok(name, f"total={total} current={cnt} test_ecu={'[FOUND]' if found else '[NOT_FOUND]'} vehicle_fields={'OK' if has_vehicle_fields else 'MISSING'}")
             else:
                 self.fail(name, f"status={resp.status_code}")
         except Exception as e:
@@ -199,11 +209,12 @@ class Tester:
     async def test_ecu_search(self):
         name = "GET  /ecu/list?search=  \u641c\u7d22ECU"
         try:
-            resp = await self.request("GET", self._path("ecu", "list"), params={"search": "TESTAPI"})
+            resp = await self.request("GET", self._path("ecu", "list"), params={"search": "TESTAPI", "page": 1, "page_size": 20})
             body = resp.json()
             if resp.status_code == 200 and body.get("code") == 200:
                 cnt = len(body["data"])
-                self.ok(name, f"\u547d\u4e2d{cnt}\u6761")
+                total = body.get("total", 0)
+                self.ok(name, f"total={total} current={cnt}")
             else:
                 self.fail(name, f"status={resp.status_code}")
         except Exception as e:
@@ -215,7 +226,9 @@ class Tester:
             resp = await self.request("GET", self._path("ecu", "detail", self.vin))
             body = resp.json()
             if resp.status_code == 200 and body.get("code") == 200:
-                self.ok(name, f"vin={body['data']['vin']}")
+                data = body["data"]
+                has_vehicle = all(k in data for k in ["vehicle_model", "vehicle_no", "user_name"])
+                self.ok(name, f"vin={data['vin']} vehicle_fields={'OK' if has_vehicle else 'MISSING'}")
             else:
                 self.fail(name, f"status={resp.status_code} body={body}")
         except Exception as e:
@@ -389,6 +402,131 @@ class Tester:
         except Exception as e:
             self.fail(name, str(e))
 
+    async def test_ecu_html_date(self):
+        name = "POST /ecu/update  HTML\u65e5\u671f\u63d0\u53d6"
+        try:
+            test_date = "2025-12-15 08:30:00"
+            html = self._make_ecu_html(sw_version="1.0.0", html_date=test_date)
+            resp = await self.request("POST", self._path("ecu", "update"),
+                data={"vin": self.vin},
+                files={"file": ("test.html", html, "text/html")},
+            )
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                detail_resp = await self.request("GET", self._path("ecu", "detail", self.vin))
+                detail = detail_resp.json()
+                modified_at = detail.get("data", {}).get("modified_at", "")
+                has_date = test_date[:10] in str(modified_at)
+                self.ok(name, f"html_date={test_date} modified_at_match={'OK' if has_date else 'FAIL'}")
+            else:
+                self.fail(name, f"status={resp.status_code}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_ignore_ecu(self):
+        name = "POST /ecu/ignore  \u5ffd\u7565ECU"
+        try:
+            resp = await self.request("POST", self._path("ecu", "ignore", self.vin),
+                json={"ecu_name": "TEST_ECU"})
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                self.ok(name, body["data"].get("message", ""))
+            else:
+                self.fail(name, f"status={resp.status_code} body={body}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_get_ignore_list(self):
+        name = "GET  /ecu/ignore  \u5ffd\u7565\u5217\u8868"
+        try:
+            resp = await self.request("GET", self._path("ecu", "ignore", self.vin))
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                cnt = len(body["data"])
+                found = any(e["ecu_name"] == "TEST_ECU" for e in body["data"])
+                self.ok(name, f"\u5171{cnt}\u6761 found={'OK' if found else 'FAIL'}")
+            else:
+                self.fail(name, f"status={resp.status_code}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_restore_ignore_ecu(self):
+        name = "POST /ecu/ignore/restore  \u6062\u590d\u5ffd\u7565"
+        try:
+            resp = await self.request("POST", self._path("ecu", "ignore", self.vin, "restore"),
+                json={"ecu_name": "TEST_ECU"})
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                self.ok(name, body["data"].get("message", ""))
+            else:
+                self.fail(name, f"status={resp.status_code} body={body}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_select_baseline(self):
+        name = "POST /ecu/baseline-select  \u9009\u5b9a\u57fa\u7ebf"
+        try:
+            resp = await self.request("POST", self._path("ecu", "baseline-select", self.vin),
+                json={"ecu_name": "TEST_ECU", "baseline_name": self.target_name})
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                self.ok(name, body["data"].get("message", ""))
+            else:
+                self.fail(name, f"status={resp.status_code} body={body}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_get_baseline_select_list(self):
+        name = "GET  /ecu/baseline-select  \u9009\u5b9a\u5217\u8868"
+        try:
+            resp = await self.request("GET", self._path("ecu", "baseline-select", self.vin))
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                cnt = len(body["data"])
+                found = any(e["ecu_name"] == "TEST_ECU" for e in body["data"])
+                self.ok(name, f"\u5171{cnt}\u6761 found={'OK' if found else 'FAIL'}")
+            else:
+                self.fail(name, f"status={resp.status_code}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_deselect_baseline(self):
+        name = "POST /ecu/baseline-select/deselect  \u53d6\u6d88\u9009\u5b9a"
+        try:
+            resp = await self.request("POST", self._path("ecu", "baseline-select", self.vin, "deselect"),
+                json={"ecu_name": "TEST_ECU"})
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                self.ok(name, body["data"].get("message", ""))
+            else:
+                self.fail(name, f"status={resp.status_code} body={body}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_reset_baseline_select(self):
+        name = "POST /ecu/baseline-select/reset  \u91cd\u7f6e\u9009\u5b9a"
+        try:
+            resp = await self.request("POST", self._path("ecu", "baseline-select", self.vin, "reset"))
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                self.ok(name, body["data"].get("message", ""))
+            else:
+                self.fail(name, f"status={resp.status_code}")
+        except Exception as e:
+            self.fail(name, str(e))
+
+    async def test_reset_all_ignore(self):
+        name = "POST /ecu/ignore/reset  \u91cd\u7f6e\u6240\u6709\u5ffd\u7565"
+        try:
+            resp = await self.request("POST", self._path("ecu", "ignore", self.vin, "reset"))
+            body = resp.json()
+            if resp.status_code == 200 and body.get("code") == 200:
+                self.ok(name, body["data"].get("message", ""))
+            else:
+                self.fail(name, f"status={resp.status_code}")
+        except Exception as e:
+            self.fail(name, str(e))
+
     async def cleanup_logs(self):
         name = "\u6e05\u7406\u6d4b\u8bd5\u65e5\u5fd7"
         try:
@@ -419,8 +557,17 @@ class Tester:
             ("ECU\u5217\u8868", self.test_list_ecus),
             ("ECU\u641c\u7d22", self.test_ecu_search),
             ("ECU\u8be6\u60c5", self.test_detail_ecu),
+            ("HTML\u65e5\u671f\u63d0\u53d6", self.test_ecu_html_date),
             ("\u66f4\u65b0ECU\u89e6\u53d1\u5386\u53f2", self.test_update_ecu),
             ("\u66f4\u65b0\u5907\u6ce8", self.test_update_remark),
+            ("\u5ffd\u7565ECU", self.test_ignore_ecu),
+            ("\u5ffd\u7565\u5217\u8868", self.test_get_ignore_list),
+            ("\u6062\u590d\u5ffd\u7565", self.test_restore_ignore_ecu),
+            ("\u91cd\u7f6e\u5ffd\u7565", self.test_reset_all_ignore),
+            ("\u9009\u5b9a\u57fa\u7ebf", self.test_select_baseline),
+            ("\u9009\u5b9a\u5217\u8868", self.test_get_baseline_select_list),
+            ("\u53d6\u6d88\u9009\u5b9a", self.test_deselect_baseline),
+            ("\u91cd\u7f6e\u9009\u5b9a", self.test_reset_baseline_select),
             ("\u64cd\u4f5c\u65e5\u5fd7", self.test_create_log),
             ("\u65e5\u5fd7\u5217\u8868", self.test_log_list),
             ("\u7edf\u8ba1\u4fe1\u606f", self.test_log_stats),
