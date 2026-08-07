@@ -39,7 +39,12 @@ export default {
   deleteDept: (params = {}) => request.delete('/dept/delete', { params }),
   // auditlog
   getAuditLogList: (params = {}) => request.get('/auditlog/list', { params }),
-  // ==================== contractor staff =============
+  // ==================== contractor project ====================
+  getContractorProjects: (params = {}) => request.get('/contractor/project/list', { params }),
+  createContractorProject: (data = {}) => request.post('/contractor/project/create', data),
+  updateContractorProject: (data = {}) => request.post('/contractor/project/update', data),
+  deleteContractorProject: (params = {}) => request.delete('/contractor/project/delete', { params }),
+  // ==================== contractor staff ====================
   getContractorStaffList: (params = {}) => request.get('/contractor/staff/list', { params }),
   getContractorStaffById: (params = {}) => request.get('/contractor/staff/get', { params }),
   createContractorStaff: (data = {}) => request.post('/contractor/staff/create', data),
@@ -47,19 +52,6 @@ export default {
   deleteContractorStaff: (params = {}) => request.delete('/contractor/staff/delete', { params }),
   resignContractorStaff: (data = {}) => request.post('/contractor/staff/resign', data),
   getContractorStaffDashboard: (params = {}) => request.get('/contractor/staff/dashboard', { params }),
-  generateContractorStaffQRToken: (data = {}) => request.post('/contractor/staff/qr_token', data),
-  // ==================== contractor requirement ====================
-  getContractorRequirementList: (params = {}) => request.get('/contractor/requirement/list', { params }),
-  createContractorRequirement: (data = {}) => request.post('/contractor/requirement/create', data),
-  updateContractorRequirement: (data = {}) => request.post('/contractor/requirement/update', data),
-  deleteContractorRequirement: (params = {}) => request.delete('/contractor/requirement/delete', { params }),
-  approveContractorRequirement: (data = {}) => request.post('/contractor/requirement/approve', data),
-  // ==================== contractor transfer ====================
-  getContractorTransferList: (params = {}) => request.get('/contractor/transfer/list', { params }),
-  createContractorTransfer: (data = {}) => request.post('/contractor/transfer/apply', data),
-  updateContractorTransfer: (data = {}) => request.post('/contractor/transfer/update', data),
-  deleteContractorTransfer: (params = {}) => request.delete('/contractor/transfer/delete', { params }),
-  confirmContractorTransfer: (data = {}) => request.post('/contractor/transfer/confirm', data),
   // ==================== contractor vehicle status ====================
   getContractorVehicleStatusList: (params = {}) => request.get('/contractor/vehicle_status/list', { params }),
   // ==================== contractor work log ====================
@@ -67,26 +59,17 @@ export default {
   createContractorWorkLog: (data = {}) => request.post('/contractor/worklog/create', data),
   updateContractorWorkLog: (data = {}) => request.post('/contractor/worklog/update', data),
   deleteContractorWorkLog: (params = {}) => request.delete('/contractor/worklog/delete', { params }),
-  confirmContractorWorkLog: (data = {}) => request.post('/contractor/worklog/confirm', data),
-  batchNotifyContractorWorkLog: (data = {}) => request.post('/contractor/worklog/batch_notify', data),
-  // ==================== contractor leave ====================
-  getContractorLeaveList: (params = {}) => request.get('/contractor/leave/list', { params }),
-  createContractorLeave: (data = {}) => request.post('/contractor/leave/create', data),
-  updateContractorLeave: (data = {}) => request.post('/contractor/leave/update', data),
-  deleteContractorLeave: (params = {}) => request.delete('/contractor/leave/delete', { params }),
-  approveContractorLeave: (data = {}) => request.post('/contractor/leave/approve', data),
+  // ==================== contractor assessment ====================
+  getAssessmentList: (params = {}) => request.get('/contractor/assessment/list', { params }),
+  createAssessment: (data = {}) => request.post('/contractor/assessment/create', data),
+  deleteAssessment: (params = {}) => request.delete('/contractor/assessment/delete', { params }),
+  getStaffScores: (params = {}) => request.get('/contractor/assessment/staff_scores', { params }),
   // ==================== contractor evaluation ====================
   getContractorEvaluationList: (params = {}) => request.get('/contractor/evaluation/list', { params }),
   rateContractorEvaluation: (data = {}) => request.post('/contractor/evaluation/rate', data),
   generateContractorEvaluation: (data = {}) => request.post('/contractor/evaluation/generate', data),
   updateContractorEvaluation: (data = {}) => request.post('/contractor/evaluation/update', data),
   deleteContractorEvaluation: (params = {}) => request.delete('/contractor/evaluation/delete', { params }),
-  // ==================== contractor QR (public) ====================
-  getContractorQRInfo: (params = {}) => request.get('/contractor/qr/info', { params, noNeedToken: true }),
-  submitContractorQRDepart: (data = {}) => request.post('/contractor/qr/depart', data, { noNeedToken: true }),
-  submitContractorQRReturn: (data = {}) => request.post('/contractor/qr/return', data, { noNeedToken: true }),
-  submitContractorQRWorkLog: (data = {}) => request.post('/contractor/qr/worklog', data, { noNeedToken: true }),
-  submitContractorQRLeave: (data = {}) => request.post('/contractor/qr/leave', data, { noNeedToken: true }),
   // ==================== contractor attendance/performance/resignation (legacy) ====================
   getContractorAttendanceList: (params = {}) => request.get('/contractor/attendance/list', { params }),
   createContractorAttendance: (data = {}) => request.post('/contractor/attendance/create', data),

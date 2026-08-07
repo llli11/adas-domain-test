@@ -7,7 +7,7 @@ from .auditlog import auditlog_router
 from .base import base_router
 from .depts import depts_router
 from .menus import menus_router
-from .contractor import contractor_router, qr_router
+from .contractor import contractor_router
 from .roles import roles_router
 from .users import users_router
 
@@ -44,8 +44,6 @@ v1_router.include_router(confirmation_router, prefix="/settlement/confirmation",
 
 v1_router.include_router(vehicles_router, prefix="/vehicle", dependencies=[DependPermission])
 v1_router.include_router(contractor_router, prefix="/contractor", dependencies=[DependPermission], tags=["外委管理"])
-# 二维码公开接口（免登录）
-v1_router.include_router(qr_router, prefix="/contractor/qr")
 v1_router.include_router(version_index_router, prefix="/version_index")
 
 v1_router.include_router(ecu_api_router, prefix="/ecu")

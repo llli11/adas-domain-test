@@ -5,50 +5,41 @@ from fastapi import APIRouter, Body, Query
 from tortoise.expressions import Q
 
 from app.controllers.contractor import (
+    contractor_assessment_record_controller,
     contractor_attendance_controller,
     contractor_evaluation_controller,
-    contractor_leave_controller,
     contractor_performance_controller,
+    contractor_project_controller,
     contractor_resignation_controller,
-    contractor_requirement_controller,
     contractor_staff_controller,
-    contractor_transfer_controller,
     contractor_vehicle_status_controller,
     contractor_work_log_controller,
 )
-from app.models.admin import Dept, User
+from app.models.admin import User
 from app.models.contractor import (
+    ContractorAssessmentRecord,
     ContractorEvaluation,
-    ContractorLeave,
-    ContractorRequirement,
+    ContractorProject,
     ContractorStaff,
-    ContractorTransfer,
     ContractorWorkLog,
 )
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.contractor import (
+    ContractorAssessmentRecordCreate,
     ContractorAttendanceCreate,
     ContractorAttendanceUpdate,
     ContractorEvaluationCreate,
     ContractorEvaluationGenerate,
     ContractorEvaluationUpdate,
-    ContractorLeaveApprove,
-    ContractorLeaveCreate,
-    ContractorLeaveUpdate,
     ContractorPerformanceCreate,
     ContractorPerformanceUpdate,
-    ContractorRequirementApprove,
-    ContractorRequirementCreate,
-    ContractorRequirementUpdate,
+    ContractorProjectCreate,
+    ContractorProjectUpdate,
     ContractorResignationApprove,
     ContractorResignationCreate,
     ContractorResignationUpdate,
     ContractorStaffCreate,
     ContractorStaffUpdate,
-    ContractorTransferConfirm,
-    ContractorTransferCreate,
-    ContractorTransferUpdate,
-    ContractorWorkLogConfirm,
     ContractorWorkLogCreate,
     ContractorWorkLogUpdate,
 )
@@ -88,8 +79,8 @@ async def list_staff(
     project_map = {}
     user_map = {}
     if project_ids:
-        depts = await Dept.filter(id__in=project_ids).all()
-        project_map = {d.id: d.name for d in depts}
+        projects = await ContractorProject.filter(id__in=project_ids).all()
+        project_map = {p.id: p.name for p in projects}
     if user_ids:
         users = await User.filter(id__in=user_ids).all()
         user_map = {u.id: (u.alias or u.username) for u in users}
@@ -112,8 +103,8 @@ async def get_staff(staff_id: int = Query(..., description="人员ID")):
 async def staff_dashboard():
     staffs = await ContractorStaff.filter(status="在职").all()
     project_ids = list({s.project_id for s in staffs if s.project_id})
-    dept_list = await Dept.filter(id__in=project_ids).all() if project_ids else []
-    project_map = {d.id: d.name for d in dept_list}
+    project_list = await ContractorProject.filter(id__in=project_ids).all() if project_ids else []
+    project_map = {p.id: p.name for p in project_list}
 
     result = {}
     for s in staffs:
@@ -155,129 +146,6 @@ async def resign_staff(staff_id: int = Body(..., description="人员ID", embed=T
     staff.resignation_date = datetime.now()
     await staff.save()
     return Success(msg="离职操作成功")
-
-
-@router.post("/staff/qr_token", summary="生成人员二维码Token")
-async def generate_qr_token(staff_id: int = Body(..., description="人员ID", embed=True)):
-    staff = await ContractorStaff.get_or_none(id=staff_id)
-    if not staff:
-        return Fail(msg="人员不存在")
-    from app.api.v1.contractor.qr import create_qr_token
-    token = create_qr_token(staff_id)
-    qr_page_url = f"/#/qr-contractor?token={token}"
-    return Success(data={"token": token, "qr_page_url": qr_page_url, "staff_name": staff.name})
-
-
-# ==================== 需求管理 ====================
-@router.get("/requirement/list", summary="需求列表")
-async def list_requirement(
-    page: int = Query(1, description="页码"),
-    page_size: int = Query(10, description="每页数量"),
-    project_id: Optional[int] = Query(None, description="项目ID"),
-    status: str = Query("", description="审批状态"),
-):
-    q = Q()
-    if project_id is not None:
-        q &= Q(project_id=project_id)
-    if status:
-        q &= Q(status=status)
-    total, objs = await contractor_requirement_controller.list(page=page, page_size=page_size, search=q)
-    data = [await obj.to_dict() for obj in objs]
-    return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
-
-
-@router.post("/requirement/create", summary="新增需求")
-async def create_requirement(req_in: ContractorRequirementCreate):
-    req = await contractor_requirement_controller.create(req_in)
-    return Success(msg="提交成功", data={"id": req.id})
-
-
-@router.post("/requirement/update", summary="更新需求")
-async def update_requirement(req_in: ContractorRequirementUpdate):
-    await contractor_requirement_controller.update(req_in.id, req_in)
-    return Success(msg="更新成功")
-
-
-@router.delete("/requirement/delete", summary="删除需求")
-async def delete_requirement(req_id: int = Query(..., description="需求ID")):
-    await contractor_requirement_controller.remove(req_id)
-    return Success(msg="删除成功")
-
-
-@router.post("/requirement/approve", summary="审批需求")
-async def approve_requirement(approve_in: ContractorRequirementApprove):
-    req = await ContractorRequirement.get_or_none(id=approve_in.id)
-    if not req:
-        return Fail(msg="需求不存在")
-    req.status = approve_in.status
-    req.approver_user_id = approve_in.approver_user_id
-    req.approval_time = datetime.now()
-    await req.save()
-    return Success(msg="审批完成")
-
-
-# ==================== 流转管理 ====================
-@router.get("/transfer/list", summary="流转列表")
-async def list_transfer(
-    page: int = Query(1, description="页码"),
-    page_size: int = Query(10, description="每页数量"),
-    staff_id: Optional[int] = Query(None, description="人员ID"),
-    status: str = Query("", description="状态"),
-):
-    q = Q()
-    if staff_id is not None:
-        q &= Q(staff_id=staff_id)
-    if status:
-        q &= Q(status=status)
-    total, objs = await contractor_transfer_controller.list(page=page, page_size=page_size, search=q)
-    data = [await obj.to_dict() for obj in objs]
-    staff_ids = list({d["staff_id"] for d in data if d.get("staff_id")})
-    staff_map = {}
-    if staff_ids:
-        staffs = await ContractorStaff.filter(id__in=staff_ids).all()
-        staff_map = {s.id: s.name for s in staffs}
-    for d in data:
-        d["staff_name"] = staff_map.get(d.get("staff_id"), "")
-    return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
-
-
-@router.post("/transfer/apply", summary="申请流转")
-async def apply_transfer(transfer_in: ContractorTransferCreate):
-    transfer = await contractor_transfer_controller.create(transfer_in)
-    return Success(msg="流转申请已提交", data={"id": transfer.id})
-
-
-@router.post("/transfer/update", summary="更新流转")
-async def update_transfer(transfer_in: ContractorTransferUpdate):
-    await contractor_transfer_controller.update(transfer_in.id, transfer_in)
-    return Success(msg="更新成功")
-
-
-@router.delete("/transfer/delete", summary="删除流转")
-async def delete_transfer(transfer_id: int = Query(..., description="流转ID")):
-    await contractor_transfer_controller.remove(transfer_id)
-    return Success(msg="删除成功")
-
-
-@router.post("/transfer/confirm", summary="确认流转")
-async def confirm_transfer(confirm_in: ContractorTransferConfirm):
-    transfer = await ContractorTransfer.get_or_none(id=confirm_in.id)
-    if not transfer:
-        return Fail(msg="流转记录不存在")
-    transfer.status = confirm_in.status
-    transfer.confirm_user_id = confirm_in.confirm_user_id
-    transfer.confirmed_at = datetime.now()
-    await transfer.save()
-    if confirm_in.status == "已确认":
-        staff = await ContractorStaff.get_or_none(id=transfer.staff_id)
-        if staff:
-            if transfer.transfer_type == "离职":
-                staff.status = "离职"
-                staff.resignation_date = datetime.now()
-            elif transfer.transfer_type == "流转":
-                staff.status = "流转中"
-            await staff.save()
-    return Success(msg="确认完成")
 
 
 # ==================== 车辆/任务状态 ====================
@@ -328,8 +196,8 @@ async def list_worklog(
         staffs = await ContractorStaff.filter(id__in=staff_ids).all()
         staff_map = {s.id: s.name for s in staffs}
     if project_ids:
-        depts = await Dept.filter(id__in=project_ids).all()
-        project_map = {d.id: d.name for d in depts}
+        projects = await ContractorProject.filter(id__in=project_ids).all()
+        project_map = {p.id: p.name for p in projects}
     if user_ids:
         users = await User.filter(id__in=user_ids).all()
         user_map = {u.id: (u.alias or u.username) for u in users}
@@ -360,90 +228,70 @@ async def delete_worklog(log_id: int = Query(..., description="日志ID", alias=
     return Success(msg="删除成功")
 
 
-@router.post("/worklog/confirm", summary="确认工作日志")
-async def confirm_worklog(confirm_in: ContractorWorkLogConfirm):
-    log = await ContractorWorkLog.get_or_none(id=confirm_in.id)
-    if not log:
-        return Fail(msg="日志不存在")
-    log.status = "已确认"
-    log.confirmed_by_user_id = confirm_in.confirmed_by_user_id
-    log.mistake_count = confirm_in.mistake_count
-    await log.save()
-    return Success(msg="确认成功")
-
-
-@router.post("/worklog/batch_notify", summary="统一通知确认工作日志")
-async def batch_notify_worklog(
-    project_id: int = Body(..., description="项目ID"),
-    work_date: str = Body(..., description="日期 YYYY-MM-DD"),
-):
-    count = await ContractorWorkLog.filter(
-        project_id=project_id, work_date=work_date, status="待确认"
-    ).count()
-    return Success(msg=f"当日共有 {count} 条工作日志待确认", data={"pending_count": count})
-
-
-# ==================== 请假管理 ====================
-@router.get("/leave/list", summary="请假列表")
-async def list_leave(
+# ==================== 考核管理 ====================
+@router.get("/assessment/list", summary="考核记录列表")
+async def list_assessment(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
     staff_id: Optional[int] = Query(None, description="人员ID"),
-    status: str = Query("", description="状态"),
+    type: str = Query("", description="类型（mistake/reward）"),
+    record_date: str = Query("", description="记录日期"),
 ):
     q = Q()
     if staff_id is not None:
         q &= Q(staff_id=staff_id)
-    if status:
-        q &= Q(status=status)
-    total, objs = await contractor_leave_controller.list(page=page, page_size=page_size, search=q)
+    if type:
+        q &= Q(type=type)
+    if record_date:
+        q &= Q(record_date=record_date)
+    total, objs = await contractor_assessment_record_controller.list(page=page, page_size=page_size, search=q)
     data = [await obj.to_dict() for obj in objs]
 
     staff_ids = list({d["staff_id"] for d in data if d.get("staff_id")})
-    user_ids = list({d["approved_by_user_id"] for d in data if d.get("approved_by_user_id")})
     staff_map = {}
-    user_map = {}
     if staff_ids:
         staffs = await ContractorStaff.filter(id__in=staff_ids).all()
         staff_map = {s.id: s.name for s in staffs}
-    if user_ids:
-        users = await User.filter(id__in=user_ids).all()
-        user_map = {u.id: (u.alias or u.username) for u in users}
     for d in data:
         d["staff_name"] = staff_map.get(d.get("staff_id"), "")
-        d["approved_by_user_name"] = user_map.get(d.get("approved_by_user_id"), "")
 
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 
 
-@router.post("/leave/create", summary="新增请假")
-async def create_leave(leave_in: ContractorLeaveCreate):
-    leave = await contractor_leave_controller.create(leave_in)
-    return Success(msg="提交成功", data={"id": leave.id})
+@router.post("/assessment/create", summary="新增考核记录")
+async def create_assessment(record_in: ContractorAssessmentRecordCreate):
+    record = await contractor_assessment_record_controller.create(record_in)
+    return Success(msg="记录成功", data={"id": record.id})
 
 
-@router.post("/leave/approve", summary="审批请假")
-async def approve_leave(approve_in: ContractorLeaveApprove):
-    leave = await ContractorLeave.get_or_none(id=approve_in.id)
-    if not leave:
-        return Fail(msg="请假记录不存在")
-    leave.status = approve_in.status
-    leave.approved_by_user_id = approve_in.approved_by_user_id
-    leave.approved_at = datetime.now()
-    await leave.save()
-    return Success(msg="审批完成")
-
-
-@router.post("/leave/update", summary="更新请假")
-async def update_leave(leave_in: ContractorLeaveUpdate):
-    await contractor_leave_controller.update(leave_in.id, leave_in)
-    return Success(msg="更新成功")
-
-
-@router.delete("/leave/delete", summary="删除请假")
-async def delete_leave(leave_id: int = Query(..., description="请假ID")):
-    await contractor_leave_controller.remove(leave_id)
+@router.delete("/assessment/delete", summary="删除考核记录")
+async def delete_assessment(record_id: int = Query(..., description="记录ID")):
+    await contractor_assessment_record_controller.remove(record_id)
     return Success(msg="删除成功")
+
+
+@router.get("/assessment/staff_scores", summary="人员考核分数汇总")
+async def staff_scores():
+    """计算所有在职人员的加减分汇总"""
+    staffs = await ContractorStaff.filter(status="在职").all()
+    records = await ContractorAssessmentRecord.all()
+
+    result = {}
+    for s in staffs:
+        result[s.id] = {"staff_id": s.id, "staff_name": s.name, "mistake_count": 0, "reward_count": 0, "score": 10.0}
+
+    for r in records:
+        sid = r.staff_id
+        if sid not in result:
+            continue
+        if r.type == "mistake":
+            result[sid]["mistake_count"] += r.count
+            result[sid]["score"] = round(result[sid]["score"] - r.count * 0.1, 2)
+        elif r.type == "reward":
+            result[sid]["reward_count"] += r.count
+            result[sid]["score"] = round(result[sid]["score"] + r.count * 0.1, 2)
+
+    return Success(data=list(result.values()))
 
 
 # ==================== 考评管理 ====================
@@ -473,47 +321,97 @@ async def list_evaluation(
 
 @router.post("/evaluation/generate", summary="生成月度考评")
 async def generate_evaluation(gen_in: ContractorEvaluationGenerate):
-    logs = await ContractorWorkLog.filter(
-        staff_id=gen_in.staff_id,
-        work_date__startswith=gen_in.evaluation_month,
-        status="已确认",
-    ).all()
+    """基于考核记录(assessment)自动生成月度考评，不传staff_id则为所有在职人员生成"""
+    staff_ids = [gen_in.staff_id] if gen_in.staff_id else [
+        s.id for s in await ContractorStaff.filter(status="在职").all()
+    ]
 
-    mistake_total = sum(log.mistake_count for log in logs)
-    mistake_deduction = mistake_total * 0.5
-    total_work_days = len(set(log.work_date for log in logs))
-    quality_score = max(0, 10 - mistake_deduction) if total_work_days > 0 else 0
+    results = []
+    for sid in staff_ids:
+        # 当月考核记录
+        month_records = await ContractorAssessmentRecord.filter(
+            staff_id=sid,
+            record_date__startswith=gen_in.evaluation_month,
+        ).all()
 
-    existing = await ContractorEvaluation.filter(
-        staff_id=gen_in.staff_id, evaluation_month=gen_in.evaluation_month
-    ).first()
-    if existing:
-        existing.mistake_total = mistake_total
-        existing.mistake_deduction = mistake_deduction
-        existing.quality_score = quality_score
-        await existing.save()
-        return Success(msg="考评已更新", data={"id": existing.id})
+        # 当月统计
+        mistake_total = sum(r.count for r in month_records if r.type == "mistake")
+        reward_total = sum(r.count for r in month_records if r.type == "reward")
+        mistake_deduction = round(mistake_total * 0.1, 2)
+        reward_bonus = round(reward_total * 0.1, 2)
 
-    eval_obj = await contractor_evaluation_controller.create({
-        "staff_id": gen_in.staff_id,
-        "evaluation_month": gen_in.evaluation_month,
-        "mistake_total": mistake_total,
-        "mistake_deduction": mistake_deduction,
-        "quality_score": quality_score,
-    })
-    return Success(msg="考评生成成功", data={"id": eval_obj.id})
+        # 累积统计（所有考核记录）
+        all_records = await ContractorAssessmentRecord.filter(staff_id=sid).all()
+        all_mistake = sum(r.count for r in all_records if r.type == "mistake")
+        all_reward = sum(r.count for r in all_records if r.type == "reward")
+        all_deduction = round(all_mistake * 0.1, 2)
+        all_bonus = round(all_reward * 0.1, 2)
+        cumulative_score = round(max(0, 10 + all_bonus - all_deduction), 2)
+
+        existing = await ContractorEvaluation.filter(
+            staff_id=sid, evaluation_month=gen_in.evaluation_month
+        ).first()
+        # 计算最终得分：质量分(60%) + 已有主观评分均值的(40%)，如未评分则直接用质量分
+        existing_attrs = {"attitude_score": 0, "ability_score": 0, "achievement_score": 0}
+        if existing:
+            existing_attrs = {k: float(existing.__dict__.get(k, 0) or 0) for k in existing_attrs}
+        subjective_avg = (existing_attrs["attitude_score"] + existing_attrs["ability_score"] + existing_attrs["achievement_score"]) / 3
+        if subjective_avg > 0:
+            final_score = round(cumulative_score * 0.6 + subjective_avg * 0.4, 2)
+        else:
+            final_score = cumulative_score
+
+        if existing:
+            existing.mistake_total = mistake_total
+            existing.mistake_deduction = mistake_deduction
+            existing.reward_total = reward_total
+            existing.reward_bonus = reward_bonus
+            existing.quality_score = cumulative_score
+            existing.final_score = final_score
+            await existing.save()
+            results.append({"staff_id": sid, "id": existing.id, "action": "updated"})
+        else:
+            eval_obj = await contractor_evaluation_controller.create({
+                "staff_id": sid,
+                "evaluation_month": gen_in.evaluation_month,
+                "mistake_total": mistake_total,
+                "mistake_deduction": mistake_deduction,
+                "reward_total": reward_total,
+                "reward_bonus": reward_bonus,
+                "quality_score": cumulative_score,
+                "final_score": final_score,
+            })
+            results.append({"staff_id": sid, "id": eval_obj.id, "action": "created"})
+
+    return Success(msg=f"已为 {len(results)} 名人员生成考评", data={"results": results})
 
 
 @router.post("/evaluation/rate", summary="月度考评分")
 async def rate_evaluation(eval_in: ContractorEvaluationCreate):
+    """填写主观评分（态度/能力/达成），自动结合考核数据计算最终得分"""
     existing = await ContractorEvaluation.filter(
         staff_id=eval_in.staff_id, evaluation_month=eval_in.evaluation_month
     ).first()
+
+    # 从考核记录计算的质量分
     if existing:
-        await contractor_evaluation_controller.update(existing.id, eval_in)
-        return Success(msg="评分已更新", data={"id": existing.id})
-    eval_obj = await contractor_evaluation_controller.create(eval_in)
-    return Success(msg="评分成功", data={"id": eval_obj.id})
+        quality_score = float(existing.quality_score or 0)
+    else:
+        all_records = await ContractorAssessmentRecord.filter(staff_id=eval_in.staff_id).all()
+        all_mistake = sum(r.count for r in all_records if r.type == "mistake")
+        all_reward = sum(r.count for r in all_records if r.type == "reward")
+        quality_score = round(max(0, 10 + all_reward * 0.1 - all_mistake * 0.1), 2)
+
+    # 最终得分 = 质量分(60%) + 主观评分均值(40%)
+    subj_scores = [float(eval_in.attitude_score or 0), float(eval_in.ability_score or 0), float(eval_in.achievement_score or 0)]
+    subjective_avg = sum(subj_scores) / 3
+    final_score = round(quality_score * 0.6 + subjective_avg * 0.4, 2) if subjective_avg > 0 else quality_score
+
+    if existing:
+        await contractor_evaluation_controller.update(existing.id, {**eval_in.model_dump(), "final_score": final_score})
+        return Success(msg="评分已更新", data={"id": existing.id, "final_score": final_score})
+    eval_obj = await contractor_evaluation_controller.create({**eval_in.model_dump(), "final_score": final_score})
+    return Success(msg="评分成功", data={"id": eval_obj.id, "final_score": final_score})
 
 
 @router.post("/evaluation/update", summary="更新考评")
@@ -642,3 +540,52 @@ async def update_resignation(res_in: ContractorResignationUpdate):
 async def delete_resignation(res_id: int = Query(..., description="离职记录ID")):
     await contractor_resignation_controller.remove(res_id)
     return Success(msg="删除成功")
+
+
+# ==================== 项目管理 ====================
+@router.get("/project/list", summary="项目列表")
+async def list_project(
+    page: int = Query(1, description="页码"),
+    page_size: int = Query(100, description="每页数量"),
+    name: str = Query("", description="项目名称"),
+):
+    q = Q(is_active=True)
+    if name:
+        q &= Q(name__contains=name)
+    total, objs = await contractor_project_controller.list(page=page, page_size=page_size, search=q, order=["order", "-id"])
+    data = [{"id": obj.id, "name": obj.name, "desc": obj.desc, "order": obj.order, "is_active": obj.is_active, "responsible_user_id": obj.responsible_user_id} for obj in objs]
+    # 查询责任人名字
+    uids = list({d["responsible_user_id"] for d in data if d["responsible_user_id"]})
+    if uids:
+        users = await User.filter(id__in=uids).all()
+        umap = {u.id: (u.alias or u.username) for u in users}
+        for d in data:
+            d["responsible_user_name"] = umap.get(d["responsible_user_id"], "")
+    return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
+
+
+@router.get("/project/get", summary="查看项目")
+async def get_project(id: int = Query(..., description="项目ID")):
+    obj = await contractor_project_controller.get(id)
+    if not obj:
+        return Fail(msg="项目不存在")
+    return Success(data={"id": obj.id, "name": obj.name, "desc": obj.desc, "order": obj.order, "is_active": obj.is_active})
+
+
+@router.post("/project/create", summary="创建项目")
+async def create_project(proj_in: ContractorProjectCreate):
+    obj = await contractor_project_controller.create(proj_in)
+    return Success(msg="创建成功", data={"id": obj.id})
+
+
+@router.post("/project/update", summary="更新项目")
+async def update_project(proj_in: ContractorProjectUpdate):
+    await contractor_project_controller.update(proj_in.id, proj_in)
+    return Success(msg="更新成功")
+
+
+@router.delete("/project/delete", summary="删除项目")
+async def delete_project(proj_id: int = Query(..., description="项目ID")):
+    await contractor_project_controller.remove(proj_id)
+    return Success(msg="删除成功")
+
