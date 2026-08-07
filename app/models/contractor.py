@@ -14,7 +14,7 @@ class ContractorStaff(BaseModel, TimestampMixin):
     company = fields.CharField(max_length=100, null=True, description="公司")
     position = fields.CharField(max_length=50, null=True, description="岗位")
 
-    project_id = fields.IntField(null=True, description="所属项目（关联dept）")
+    project_id = fields.IntField(null=True, description="所属项目")
     responsible_user_id = fields.IntField(null=True, description="责任人（关联user）")
 
     entry_date = fields.DatetimeField(null=True, description="入职时间")
@@ -63,41 +63,6 @@ class ContractorVehicleStatus(BaseModel, TimestampMixin):
         table = "contractor_vehicle_status"
 
 
-class ContractorRequirement(BaseModel, TimestampMixin):
-    """外委需求单"""
-
-    project_id = fields.IntField(null=True, description="需求项目")
-    type = fields.CharField(max_length=20, description="需求类型（驾驶员/工程师）")
-    demand_date = fields.CharField(max_length=10, null=True, description="需求时间")
-    quantity = fields.IntField(default=1, description="数量")
-    period = fields.CharField(max_length=100, null=True, description="周期")
-    status = fields.CharField(max_length=20, default="待审批", description="审批状态")
-    approver_user_id = fields.IntField(null=True, description="审批人")
-    approval_time = fields.DatetimeField(null=True, description="审批时间")
-    created_by_user_id = fields.IntField(null=True, description="创建人")
-    remark = fields.TextField(null=True, description="备注")
-
-    class Meta:
-        table = "contractor_requirement"
-
-
-class ContractorTransfer(BaseModel, TimestampMixin):
-    """外委人员流转记录（入/转/离）"""
-
-    staff_id = fields.IntField(description="人员ID")
-    transfer_type = fields.CharField(max_length=20, description="流转类型（入职/流转/离职）")
-    from_project_id = fields.IntField(null=True, description="原项目")
-    to_project_id = fields.IntField(null=True, description="目标项目")
-    initiator_user_id = fields.IntField(null=True, description="发起人")
-    confirm_user_id = fields.IntField(null=True, description="确认人")
-    status = fields.CharField(max_length=20, default="待确认", description="状态（待确认/已确认/已驳回）")
-    confirmed_at = fields.DatetimeField(null=True, description="确认时间")
-    remark = fields.TextField(null=True, description="备注")
-
-    class Meta:
-        table = "contractor_transfer"
-
-
 class ContractorWorkLog(BaseModel, TimestampMixin):
     """外委每日工作日志"""
 
@@ -121,19 +86,17 @@ class ContractorWorkLog(BaseModel, TimestampMixin):
         table = "contractor_work_log"
 
 
-class ContractorLeave(BaseModel, TimestampMixin):
-    """外委请假申请"""
+class ContractorAssessmentRecord(BaseModel, TimestampMixin):
+    """外委人员考核记录（犯错/奖励）"""
 
     staff_id = fields.IntField(description="人员ID")
-    leave_date = fields.CharField(max_length=10, null=True, description="请假日期")
-    leave_type = fields.CharField(max_length=50, null=True, description="请假类型")
-    reason = fields.TextField(null=True, description="请假原因")
-    status = fields.CharField(max_length=20, default="待审批", description="状态（待审批/已批准/已驳回）")
-    approved_by_user_id = fields.IntField(null=True, description="审批人")
-    approved_at = fields.DatetimeField(null=True, description="审批时间")
+    type = fields.CharField(max_length=20, description="类型（mistake=犯错 / reward=奖励）")
+    count = fields.IntField(default=1, description="次数")
+    record_date = fields.CharField(max_length=10, null=True, description="记录日期 YYYY-MM-DD")
+    remark = fields.TextField(null=True, description="备注")
 
     class Meta:
-        table = "contractor_leave"
+        table = "contractor_assessment_record"
 
 
 class ContractorEvaluation(BaseModel, TimestampMixin):
@@ -141,13 +104,15 @@ class ContractorEvaluation(BaseModel, TimestampMixin):
 
     staff_id = fields.IntField(description="人员ID")
     evaluation_month = fields.CharField(max_length=7, description="考核周期 YYYY-MM")
-    attitude_score = fields.FloatField(null=True, description="工作态度评分（0-10）")
-    ability_score = fields.FloatField(null=True, description="工作能力评分（0-10）")
-    achievement_score = fields.FloatField(null=True, description="工作达成评分（0-10）")
-    quality_score = fields.FloatField(null=True, description="任务质量评分（自动计算）")
+    attitude_score = fields.DecimalField(max_digits=4, decimal_places=1, null=True, description="工作态度评分（0-10）")
+    ability_score = fields.DecimalField(max_digits=4, decimal_places=1, null=True, description="工作能力评分（0-10）")
+    achievement_score = fields.DecimalField(max_digits=4, decimal_places=1, null=True, description="工作达成评分（0-10）")
+    quality_score = fields.DecimalField(max_digits=5, decimal_places=2, null=True, description="任务质量评分（自动计算）")
     mistake_total = fields.IntField(default=0, description="当月犯错总次数")
-    mistake_deduction = fields.FloatField(default=0.0, description="犯错减分（自动计算）")
-    final_score = fields.FloatField(null=True, description="月度绩效分数（自动计算）")
+    mistake_deduction = fields.DecimalField(max_digits=5, decimal_places=2, default=0.0, description="犯错减分（自动计算，每次-0.1）")
+    reward_total = fields.IntField(default=0, description="当月奖励总次数")
+    reward_bonus = fields.DecimalField(max_digits=5, decimal_places=2, default=0.0, description="奖励加分（自动计算，每次+0.1）")
+    final_score = fields.DecimalField(max_digits=5, decimal_places=2, null=True, description="月度绩效分数（自动计算）")
     assessor = fields.CharField(max_length=50, null=True, description="考核人")
     assessment_date = fields.DatetimeField(null=True, description="考核日期")
 
@@ -188,3 +153,16 @@ class ContractorResignation(BaseModel, TimestampMixin):
 
     class Meta:
         table = "contractor_resignation"
+
+
+class ContractorProject(BaseModel, TimestampMixin):
+    """外委项目/车型表"""
+
+    name = fields.CharField(max_length=100, description="项目名称")
+    desc = fields.CharField(max_length=500, null=True, description="项目描述")
+    order = fields.IntField(default=0, description="排序")
+    is_active = fields.BooleanField(default=True, description="是否启用")
+    responsible_user_id = fields.IntField(null=True, description="责任人ID")
+
+    class Meta:
+        table = "contractor_project"

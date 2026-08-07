@@ -67,15 +67,6 @@ export const basicRoutes = [
       title: '登录页',
     },
   },
-  {
-    name: 'QRContractor',
-    path: '/qr-contractor',
-    component: () => import('@/views/qr-contractor/index.vue'),
-    isHidden: true,
-    meta: {
-    title: '扫码登记',
-    },
-  },  
 ]
 
 export const NOT_FOUND_ROUTE = {

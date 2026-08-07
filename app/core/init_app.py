@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import List
 
 from aerich import Command
-from aerich.exceptions import AerichError
+try:
+    from aerich.exceptions import AerichError
+except ImportError:
+    AerichError = Exception
 from fastapi import FastAPI
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -453,64 +456,20 @@ async def init_menus() -> None:
             ),
             Menu(
                 menu_type=MenuType.MENU,
-                name="状态看板",
-                path="status",
+                name="人员考核管理",
+                path="assessment",
                 order=2,
-                parent_id=contractor_parent.id,
-                icon="material-symbols:dashboard-outline",
-                is_hidden=False,
-                component="/contractor/status",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="需求管理",
-                path="requirement",
-                order=3,
-                parent_id=contractor_parent.id,
-                icon="material-symbols:request-page-outline",
-                is_hidden=False,
-                component="/contractor/requirement",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="流动管理",
-                path="transfer",
-                order=4,
-                parent_id=contractor_parent.id,
-                icon="material-symbols:sync-outline",
-                is_hidden=False,
-                component="/contractor/transfer",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="工作日志审核",
-                path="worklog",
-                order=5,
                 parent_id=contractor_parent.id,
                 icon="material-symbols:assignment-turned-in-outline",
                 is_hidden=False,
-                component="/contractor/worklog",
-                keepalive=False,
-            ),
-            Menu(
-                menu_type=MenuType.MENU,
-                name="请假管理",
-                path="leave",
-                order=6,
-                parent_id=contractor_parent.id,
-                icon="material-symbols:time-off-outline",
-                is_hidden=False,
-                component="/contractor/leave",
+                component="/contractor/assessment",
                 keepalive=False,
             ),
             Menu(
                 menu_type=MenuType.MENU,
                 name="考评管理",
                 path="evaluation",
-                order=7,
+                order=3,
                 parent_id=contractor_parent.id,
                 icon="material-symbols:star-outline",
                 is_hidden=False,
@@ -592,6 +551,27 @@ async def init_menus() -> None:
                         component=component,
                         keepalive=True,
                     )
+
+        # 外委管理菜单迁移：删除废弃菜单（状态看板/需求/流转/工作日志/请假），补充考核管理
+        contractor_menu = await Menu.get_or_none(path="/contractor")
+        if contractor_menu:
+            # 删除已废弃的子菜单
+            deprecated_paths = ["status", "requirement", "transfer", "worklog", "leave"]
+            for dp in deprecated_paths:
+                await Menu.filter(path=dp, parent_id=contractor_menu.id).delete()
+            # 补充缺失的考核管理菜单
+            if not await Menu.filter(path="assessment", parent_id=contractor_menu.id).exists():
+                await Menu.create(
+                    menu_type=MenuType.MENU,
+                    name="人员考核管理",
+                    path="assessment",
+                    order=2,
+                    parent_id=contractor_menu.id,
+                    icon="material-symbols:assignment-turned-in-outline",
+                    is_hidden=False,
+                    component="/contractor/assessment",
+                    keepalive=False,
+                )
 
 async def init_apis():
     apis = await api_controller.model.exists()
@@ -683,9 +663,21 @@ async def init_roles():
         await user_role.apis.add(*basic_apis)
 
 
+async def reset_contractor_staff_status():
+    """启动时重置所有外委人员状态为空闲"""
+    from app.models.contractor import ContractorStaff
+
+    count = await ContractorStaff.filter(task_status="任务中").update(
+        task_status="空闲", is_idle=True, current_vehicle=None, current_task=None
+    )
+    if count:
+        logger.info(f"服务启动: 已重置 {count} 名外委人员为空闲状态")
+
+
 async def init_data():
     await init_db()
     await init_superuser()
     await init_menus()
     await init_apis()
     await init_roles()
+    await reset_contractor_staff_status()

@@ -1,5 +1,7 @@
-from contextlib import asynccontextmanager
+import asyncio
 import os
+from contextlib import asynccontextmanager
+from datetime import date, timedelta
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -18,15 +20,43 @@ try:
 except ImportError:
     raise SettingNotFound("Can not import settings")
 
-# UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "static", "uploads")
-# os.makedirs(UPLOAD_DIR, exist_ok=True)
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+async def _daily_staff_reset():
+    """每日凌晨重置所有外委人员状态为空闲"""
+    from app.models.contractor import ContractorStaff
+
+    today = date.today()
+    while True:
+        now = date.today()
+        if now != today:
+            count = await ContractorStaff.filter(task_status="任务中").update(
+                task_status="空闲", is_idle=True, current_vehicle=None, current_task=None
+            )
+            if count:
+                logger.info(f"每日状态刷新: 已重置 {count} 名外委人员为空闲")
+            today = now
+        # 距离明天0点的秒数 + 60秒缓冲
+        tomorrow = date.today() + timedelta(days=1)
+        sleep_seconds = (tomorrow - date.today()).total_seconds() + 60
+        await asyncio.sleep(min(sleep_seconds, 3600))  # 最多每小时检查一次
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         await init_data()
     except Exception as e:
         logger.warning(f"Database initialization failed (some features may be unavailable): {e}")
+    reset_task = asyncio.create_task(_daily_staff_reset())
     yield
+    reset_task.cancel()
+    try:
+        await reset_task
+    except asyncio.CancelledError:
+        pass
     await Tortoise.close_connections()
 
 
@@ -45,13 +75,7 @@ def create_app() -> FastAPI:
     uploads_path = os.path.join(os.path.dirname(__file__), "static", "uploads")
     os.makedirs(uploads_path, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=uploads_path), name="uploads")
-	
-	# 挂载静态文件
-    web_dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "dist")
-    app.mount("/", StaticFiles(directory=web_dist_path, html=True), name="web")
-	
-	# app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-    
+
     return app
 
 

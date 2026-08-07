@@ -2,34 +2,33 @@ from typing import Optional
 
 from app.core.crud import CRUDBase
 from app.models.contractor import (
+    ContractorAssessmentRecord,
     ContractorAttendance,
     ContractorEvaluation,
-    ContractorLeave,
     ContractorPerformance,
-    ContractorRequirement,
+    ContractorProject,
     ContractorResignation,
     ContractorStaff,
-    ContractorTransfer,
     ContractorVehicleStatus,
     ContractorWorkLog,
 )
 from app.schemas.contractor import (
+    ContractorProjectCreate,
+    ContractorProjectUpdate,
+)
+from app.schemas.contractor import (
+    ContractorAssessmentRecordCreate,
+    ContractorAssessmentRecordUpdate,
     ContractorAttendanceCreate,
     ContractorAttendanceUpdate,
     ContractorEvaluationCreate,
     ContractorEvaluationUpdate,
-    ContractorLeaveCreate,
-    ContractorLeaveUpdate,
     ContractorPerformanceCreate,
     ContractorPerformanceUpdate,
-    ContractorRequirementCreate,
-    ContractorRequirementUpdate,
     ContractorResignationCreate,
     ContractorResignationUpdate,
     ContractorStaffCreate,
     ContractorStaffUpdate,
-    ContractorTransferCreate,
-    ContractorTransferUpdate,
     ContractorVehicleStatusCreate,
     ContractorVehicleStatusUpdate,
     ContractorWorkLogCreate,
@@ -61,22 +60,6 @@ class ContractorVehicleStatusController(CRUDBase[ContractorVehicleStatus, Contra
         return await self.model.get_or_none(id=id)
 
 
-class ContractorRequirementController(CRUDBase[ContractorRequirement, ContractorRequirementCreate, ContractorRequirementUpdate]):
-    def __init__(self):
-        super().__init__(model=ContractorRequirement)
-
-    async def get(self, id: int) -> Optional[ContractorRequirement]:
-        return await self.model.get_or_none(id=id)
-
-
-class ContractorTransferController(CRUDBase[ContractorTransfer, ContractorTransferCreate, ContractorTransferUpdate]):
-    def __init__(self):
-        super().__init__(model=ContractorTransfer)
-
-    async def get(self, id: int) -> Optional[ContractorTransfer]:
-        return await self.model.get_or_none(id=id)
-
-
 class ContractorWorkLogController(CRUDBase[ContractorWorkLog, ContractorWorkLogCreate, ContractorWorkLogUpdate]):
     def __init__(self):
         super().__init__(model=ContractorWorkLog)
@@ -88,11 +71,11 @@ class ContractorWorkLogController(CRUDBase[ContractorWorkLog, ContractorWorkLogC
         return await self.model.filter(staff_id=staff_id, work_date=work_date).exists()
 
 
-class ContractorLeaveController(CRUDBase[ContractorLeave, ContractorLeaveCreate, ContractorLeaveUpdate]):
+class ContractorAssessmentRecordController(CRUDBase[ContractorAssessmentRecord, ContractorAssessmentRecordCreate, ContractorAssessmentRecordUpdate]):
     def __init__(self):
-        super().__init__(model=ContractorLeave)
+        super().__init__(model=ContractorAssessmentRecord)
 
-    async def get(self, id: int) -> Optional[ContractorLeave]:
+    async def get(self, id: int) -> Optional[ContractorAssessmentRecord]:
         return await self.model.get_or_none(id=id)
 
 
@@ -123,10 +106,19 @@ class ContractorResignationController(CRUDBase[ContractorResignation, Contractor
 contractor_staff_controller = ContractorStaffController()
 contractor_attendance_controller = ContractorAttendanceController()
 contractor_vehicle_status_controller = ContractorVehicleStatusController()
-contractor_requirement_controller = ContractorRequirementController()
-contractor_transfer_controller = ContractorTransferController()
 contractor_work_log_controller = ContractorWorkLogController()
-contractor_leave_controller = ContractorLeaveController()
+contractor_assessment_record_controller = ContractorAssessmentRecordController()
 contractor_evaluation_controller = ContractorEvaluationController()
 contractor_performance_controller = ContractorPerformanceController()
 contractor_resignation_controller = ContractorResignationController()
+
+
+class ContractorProjectController(CRUDBase[ContractorProject, ContractorProjectCreate, ContractorProjectUpdate]):
+    def __init__(self):
+        super().__init__(model=ContractorProject)
+
+    async def get(self, id: int):
+        return await self.model.get_or_none(id=id)
+
+
+contractor_project_controller = ContractorProjectController()

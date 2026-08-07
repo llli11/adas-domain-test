@@ -64,54 +64,6 @@ class ContractorVehicleStatusUpdate(ContractorVehicleStatusCreate):
 
 # ==================== ContractorRequirement ====================
 
-class ContractorRequirementCreate(BaseModel):
-    project_id: Optional[int] = Field(None, description="需求项目ID")
-    type: str = Field(..., description="需求类型（驾驶员/工程师）")
-    demand_date: Optional[str] = Field(None, description="需求时间")
-    quantity: int = Field(1, description="数量")
-    period: Optional[str] = Field(None, description="周期")
-    remark: Optional[str] = Field(None, description="备注")
-
-
-class ContractorRequirementUpdate(BaseModel):
-    id: int
-    project_id: Optional[int] = Field(None, description="需求项目ID")
-    type: Optional[str] = Field(None, description="需求类型")
-    demand_date: Optional[str] = Field(None, description="需求时间")
-    quantity: Optional[int] = Field(None, description="数量")
-    period: Optional[str] = Field(None, description="周期")
-    remark: Optional[str] = Field(None, description="备注")
-
-
-class ContractorRequirementApprove(BaseModel):
-    id: int
-    status: str = Field(..., description="审批状态（已通过/已驳回）")
-    approver_user_id: int = Field(..., description="审批人ID")
-
-
-# ==================== ContractorTransfer ====================
-
-class ContractorTransferCreate(BaseModel):
-    staff_id: int = Field(..., description="人员ID")
-    transfer_type: str = Field(..., description="流转类型（入职/流转/离职）")
-    from_project_id: Optional[int] = Field(None, description="原项目ID")
-    to_project_id: Optional[int] = Field(None, description="目标项目ID")
-    initiator_user_id: Optional[int] = Field(None, description="发起人ID")
-    remark: Optional[str] = Field(None, description="备注")
-
-
-class ContractorTransferUpdate(BaseModel):
-    id: int
-    to_project_id: Optional[int] = Field(None, description="目标项目ID")
-    remark: Optional[str] = Field(None, description="备注")
-
-
-class ContractorTransferConfirm(BaseModel):
-    id: int
-    status: str = Field(..., description="确认状态（已确认/已驳回）")
-    confirm_user_id: int = Field(..., description="确认人ID")
-
-
 # ==================== ContractorWorkLog ====================
 
 class ContractorWorkLogCreate(BaseModel):
@@ -143,33 +95,22 @@ class ContractorWorkLogUpdate(BaseModel):
     remark: Optional[str] = Field(None, description="备注")
 
 
-class ContractorWorkLogConfirm(BaseModel):
-    id: int
-    mistake_count: int = Field(0, description="当天犯错次数")
-    confirmed_by_user_id: int = Field(..., description="确认人ID")
+# ==================== ContractorAssessmentRecord ====================
 
-
-# ==================== ContractorLeave ====================
-
-class ContractorLeaveCreate(BaseModel):
+class ContractorAssessmentRecordCreate(BaseModel):
     staff_id: int = Field(..., description="人员ID")
-    leave_date: Optional[str] = Field(None, description="请假日期")
-    leave_type: Optional[str] = Field(None, description="请假类型")
-    reason: Optional[str] = Field(None, description="请假原因")
+    type: str = Field(..., description="类型（mistake=犯错 / reward=奖励）")
+    count: int = Field(1, description="次数")
+    record_date: Optional[str] = Field(None, description="记录日期 YYYY-MM-DD")
+    remark: Optional[str] = Field(None, description="备注")
 
 
-class ContractorLeaveUpdate(BaseModel):
+class ContractorAssessmentRecordUpdate(BaseModel):
     id: int
-    leave_date: Optional[str] = Field(None, description="请假日期")
-    leave_type: Optional[str] = Field(None, description="请假类型")
-    reason: Optional[str] = Field(None, description="请假原因")
-    status: Optional[str] = Field(None, description="状态")
-
-
-class ContractorLeaveApprove(BaseModel):
-    id: int
-    status: str = Field(..., description="审批状态（已批准/已驳回）")
-    approved_by_user_id: int = Field(..., description="审批人ID")
+    type: Optional[str] = Field(None, description="类型")
+    count: Optional[int] = Field(None, description="次数")
+    record_date: Optional[str] = Field(None, description="记录日期")
+    remark: Optional[str] = Field(None, description="备注")
 
 
 # ==================== ContractorEvaluation ====================
@@ -189,6 +130,7 @@ class ContractorEvaluationUpdate(ContractorEvaluationCreate):
 
 
 class ContractorEvaluationGenerate(BaseModel):
+    staff_id: Optional[int] = Field(None, description="人员ID，为空则生成所有在职人员")
     evaluation_month: str = Field(..., description="考核周期 YYYY-MM")
 
 
@@ -235,34 +177,14 @@ class ContractorResignationApprove(BaseModel):
     approver: str = Field(..., description="审批人")
 
 
-# ==================== QR Token ====================
-
-class QRTokenPayload(BaseModel):
-    staff_id: int = Field(..., description="人员ID")
-    exp: Optional[int] = Field(None, description="过期时间戳")
-
-
-class QRDepartReturn(BaseModel):
-    token: str = Field(..., description="QR Token")
-    vehicle_name: str = Field(..., description="车辆名称")
-    task_type: Optional[str] = Field(None, description="任务类型")
-    action: str = Field(..., description="动作（出发/返回）")
+# ==================== ContractorProject ====================
+class ContractorProjectCreate(BaseModel):
+    name: str = Field(..., description="项目名称")
+    desc: Optional[str] = Field(None, description="项目描述")
+    order: int = Field(0, description="排序")
+    is_active: bool = Field(True, description="是否启用")
+    responsible_user_id: Optional[int] = Field(None, description="责任人ID")
 
 
-class QRWorkLogSubmit(BaseModel):
-    token: str = Field(..., description="QR Token")
-    check_out_time: Optional[str] = Field(None, description="下班时间")
-    check_out_image: Optional[str] = Field(None, description="打卡截图URL")
-    normal_hours: float = Field(8.0, description="正常工时")
-    overtime_hours: float = Field(0.0, description="加班工时")
-    work_content: Optional[str] = Field(None, description="工作内容")
-    project_id: Optional[int] = Field(None, description="今日工作的车型项目ID")
-    advance_payment: float = Field(0.0, description="垫付费用")
-    advance_payment_image: Optional[str] = Field(None, description="垫付费用证明图片URL")
-
-
-class QRLeaveSubmit(BaseModel):
-    token: str = Field(..., description="QR Token")
-    leave_date: Optional[str] = Field(None, description="请假日期")
-    leave_type: Optional[str] = Field(None, description="请假类型")
-    reason: Optional[str] = Field(None, description="请假原因")
+class ContractorProjectUpdate(ContractorProjectCreate):
+    id: int
