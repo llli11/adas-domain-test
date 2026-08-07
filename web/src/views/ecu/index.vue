@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton,
@@ -27,6 +27,10 @@ const userStore = useUserStore()
 const searchVin = ref('')
 const ecuList = ref([])
 const loading = ref(false)
+const loadingMore = ref(false)
+const hasMore = ref(true)
+const pageForLoad = ref(1)
+const pageSize = 20
 
 const updateModalVisible = ref(false)
 const updateLoading = ref(false)
@@ -174,25 +178,67 @@ function handleUpdate() {
     })
 }
 
-function handleSearch() {
+async function handleSearch() {
+  const kw = searchVin.value?.trim() || ''
+  sessionStorage.setItem('ecu_list_search', kw)
+  pageForLoad.value = 1
+  hasMore.value = true
   loading.value = true
-  api
-    .getECUList({ search: searchVin.value || undefined })
-    .then((res) => {
-      ecuList.value = res.data || []
-    })
-    .finally(() => {
-      loading.value = false
-    })
+  try {
+    const res = await api.getECUList({ search: kw || undefined, page: 1, page_size: pageSize })
+    ecuList.value = res.data || []
+    hasMore.value = (res.data || []).length >= pageSize
+  } finally {
+    loading.value = false
+  }
 }
+
+function handleClearSearch() {
+  searchVin.value = ''
+  nextTick(() => handleSearch())
+}
+
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  const nextPage = pageForLoad.value + 1
+  try {
+    const res = await api.getECUList({ search: searchVin.value || undefined, page: nextPage, page_size: pageSize })
+    const newItems = res.data || []
+    if (newItems.length > 0) {
+      ecuList.value = [...ecuList.value, ...newItems]
+      pageForLoad.value = nextPage
+    }
+    hasMore.value = newItems.length >= pageSize
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function handleScroll() {
+  const scrollBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight
+  if (scrollBottom < 100) {
+    loadMore()
+  }
+}
+
+onMounted(() => {
+  const saved = sessionStorage.getItem('ecu_list_search')
+  if (saved) {
+    searchVin.value = saved
+  }
+  handleSearch()
+  window.addEventListener('scroll', handleScroll)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+})
 
 function handleClickCard(vin) {
   router.push(`/ecu/detail/${vin}`)
 }
 
-onMounted(() => {
-  handleSearch()
-})
 </script>
 
 <template>
@@ -204,9 +250,10 @@ onMounted(() => {
             v-model:value="searchVin"
             placeholder="搜索"
             clearable
-            @keyup.enter="handleSearch"
+            @clear="handleClearSearch"
+            @keyup.enter="handleSearch()"
           />
-<NButton type="primary" @click="handleSearch">
+<NButton type="primary" @click="handleSearch()">
             <TheIcon icon="material-symbols:search" :size="16" class="mr-5" />
             搜索
           </NButton>
@@ -225,11 +272,22 @@ onMounted(() => {
           hoverable
           @click="handleClickCard(item.vin)"
         >
-          <div class="vin-label">{{ item.vin }}</div>
+          <div class="card-no">{{ item.vehicle_no || '-' }}</div>
+          <div class="card-info">
+            <div class="card-row"><span class="card-label">车型</span><span class="card-val">{{ item.vehicle_model || '-' }}</span></div>
+            <div class="card-row"><span class="card-label">VIN</span><span class="card-val">{{ item.vin }}</span></div>
+            <div class="card-row"><span class="card-label">使用人</span><span class="card-val">{{ item.user_name || '-' }}</span></div>
+          </div>
         </NCard>
         <div v-if="ecuList.length === 0 && !loading" class="empty-tip">
           暂无数据
         </div>
+      </div>
+      <div v-if="loadingMore" class="loading-more">
+        <NSpin size="small" /> 加载中...
+      </div>
+      <div v-if="!hasMore && ecuList.length > 0" class="loading-more">
+        已加载全部
       </div>
     </NCard>
 
@@ -288,6 +346,7 @@ onMounted(() => {
 
 .ecu-card {
   min-height: calc(100vh - 100px);
+  overflow: visible;
 }
 
 .toolbar {
@@ -296,7 +355,7 @@ onMounted(() => {
 
 .ecu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
 }
 
@@ -310,11 +369,36 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.vin-label {
+.card-no {
   text-align: center;
-  font-size: 16px;
-  font-weight: 500;
-  padding: 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 16px 0 12px;
+  color: #1a6fb5;
+}
+
+.card-info {
+  padding: 0 8px 16px;
+}
+
+.card-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.card-label {
+  color: #999;
+  width: 56px;
+  flex-shrink: 0;
+}
+
+.card-val {
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-tip {
@@ -322,5 +406,15 @@ onMounted(() => {
   text-align: center;
   color: #999;
   padding: 40px 0;
+}
+
+.loading-more {
+  text-align: center;
+  color: #999;
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 </style>

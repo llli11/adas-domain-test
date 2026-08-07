@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onActivated, ref, watch } from 'vue'
+import { onMounted, onUnmounted, onActivated, ref, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   NButton,
@@ -29,6 +29,10 @@ const message = useMessage()
 const searchName = ref('')
 const targetList = ref([])
 const loading = ref(false)
+const loadingMore = ref(false)
+const hasMore = ref(true)
+const pageForLoad = ref(1)
+const pageSize = 20
 
 const updateModalVisible = ref(false)
 const updateLoading = ref(false)
@@ -47,21 +51,50 @@ onActivated(() => {
   handleSearch()
 })
 
-function handleSearch() {
+function handleClearSearch() {
+  nextTick(() => handleSearch())
+}
+
+async function handleSearch() {
+  pageForLoad.value = 1
+  hasMore.value = true
   loading.value = true
-  api
-    .getTargetList({ search: searchName.value || undefined })
-    .then((res) => {
-      console.log('API response:', res)
-      targetList.value = res.data || []
-    })
-    .catch((err) => {
-      console.error('API error:', err)
-      message.error(err.message || '获取数据失败')
-    })
-    .finally(() => {
-      loading.value = false
-    })
+  try {
+    const res = await api.getTargetList({ search: searchName.value || undefined, page: 1, page_size: pageSize })
+    targetList.value = res.data || []
+    hasMore.value = (res.data || []).length >= pageSize
+  } catch (err) {
+    console.error('API error:', err)
+    message.error(err.message || '获取数据失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  const nextPage = pageForLoad.value + 1
+  try {
+    const res = await api.getTargetList({ search: searchName.value || undefined, page: nextPage, page_size: pageSize })
+    const newItems = res.data || []
+    if (newItems.length > 0) {
+      targetList.value = [...targetList.value, ...newItems]
+      pageForLoad.value = nextPage
+    }
+    hasMore.value = newItems.length >= pageSize
+  } catch (err) {
+    console.error('loadMore error:', err)
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function handleScroll() {
+  const scrollBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight
+  if (scrollBottom < 100) {
+    loadMore()
+  }
 }
 
 function handleClickCard(target_name) {
@@ -139,6 +172,11 @@ async function downloadTemplate() {
 
 onMounted(() => {
   handleSearch()
+  window.addEventListener('scroll', handleScroll)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
 })
 </script>
 
@@ -150,12 +188,13 @@ onMounted(() => {
           <NSpace>
             <NInput
               v-model:value="searchName"
-              placeholder="搜索基线版本名称"
+              placeholder="搜索"
               clearable
               style="width: 200px"
-              @keyup.enter="handleSearch"
+              @clear="handleClearSearch"
+              @keyup.enter="handleSearch()"
             />
-<NButton type="primary" @click="handleSearch">
+<NButton type="primary" @click="handleSearch()">
               <TheIcon icon="material-symbols:search" :size="16" class="mr-5" />
               搜索
             </NButton>
@@ -186,6 +225,12 @@ onMounted(() => {
       </div>
       <div v-if="targetList.length === 0 && !loading" class="empty-tip">
         <div>暂无基线数据</div>
+      </div>
+      <div v-if="loadingMore" class="loading-more">
+        <NSpin size="small" /> 加载中...
+      </div>
+      <div v-if="!hasMore && targetList.length > 0" class="loading-more">
+        已加载全部
       </div>
     </NCard>
 
@@ -240,7 +285,7 @@ onMounted(() => {
 
 .target-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
 }
 
@@ -266,5 +311,15 @@ onMounted(() => {
   text-align: center;
   color: #999;
   padding: 40px 0;
+}
+
+.loading-more {
+  text-align: center;
+  color: #999;
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 </style>

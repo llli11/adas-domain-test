@@ -122,16 +122,23 @@ def parse_excel_to_ecu_info(file_content: bytes) -> Dict[str, Any]:
 
 
 @router.get("/target/list", summary="获取基线列表")
-async def get_target_list(search: Optional[str] = None) -> Dict[str, Any]:
+async def get_target_list(
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> Dict[str, Any]:
     try:
-        q = ReleaseTargetInfo.all().order_by("-updated_at")
         if search:
             q = ReleaseTargetInfo.filter(target_name__contains=search).order_by("-updated_at")
-        results = await q.values("id", "target_name", "ecu_info", "created_at", "updated_at")
-        return {"code": 200, "data": results, "msg": "OK"}
+        else:
+            q = ReleaseTargetInfo.all().order_by("-updated_at")
+        total = await q.count()
+        offset = (page - 1) * page_size
+        results = await q.offset(offset).limit(page_size).values("id", "target_name", "ecu_info", "created_at", "updated_at")
+        return {"code": 200, "data": results, "total": total, "msg": "OK"}
     except Exception as e:
         logger.error(f"Target list error: {e}")
-        return {"code": 500, "data": [], "msg": f"数据库错误: {str(e)}"}
+        return {"code": 500, "data": [], "total": 0, "msg": f"数据库错误: {str(e)}"}
 
 
 @router.get("/target/detail/{target_name}", summary="获取基线详情")
