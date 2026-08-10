@@ -180,6 +180,12 @@ async function handleLogin() {
   animation: card-in 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* h-54 把 .n-input 撑高到 54px，而 naive-ui 内部 <input> 固定 40px 且
+   容器默认 align-items: normal(顶对齐)，导致光标/文字偏上。强制垂直居中。 */
+.login-card :deep(.n-input) {
+  align-items: center;
+}
+
 .gradient-title {
   background: linear-gradient(90deg, #1677ff, #0ea371, #06b6d4);
   -webkit-background-clip: text;

@@ -247,10 +247,10 @@ async def _auto_sync_daily():
                 _eng_skipped_no_project += 1
                 if _eng_skipped_no_project <= 5:
                     logger.warning(
-                        f"[DailySync] 跳过无项目工程师: person={eng.person_name}, date={eng.record_date}, "
+                        f"[DailySync] 工程师无项目(使用兜底id=1): person={eng.person_name}, date={eng.record_date}, "
                         f"requirement_code={eng.requirement_code}, test_order_id={eng.test_order_id}"
                     )
-                continue
+                # 不再跳过，继续处理（project_id 兜底为 1）
             if _eng_logged < 3:
                 _eng_logged += 1
                 logger.info(
@@ -269,7 +269,7 @@ async def _auto_sync_daily():
             req_code = (eng.requirement_code or "").strip()
             eng_to_id = _resolve_test_order_id(req_code, eng.test_order_id)
             # ★ 通过 test_order_id 覆盖 project_id（使用试验单号看板中的项目信息）
-            eng_proj_id = eng.project_id
+            eng_proj_id = eng.project_id or 1  # 无项目时兜底为1
             if eng_to_id and to_project_map.get(eng_to_id):
                 eng_proj_id = to_project_map[eng_to_id]
             tno = eng.test_order.test_order_no if eng.test_order else (req_code if eng_to_id else "")
@@ -304,7 +304,7 @@ async def _auto_sync_daily():
                 defaults.update({"project_id": eng_proj_id, "record_date": eng.record_date, "person_name": eng.person_name})
                 pending_create[person_key] = (defaults, src_key)
         if _eng_skipped_no_project > 0:
-            logger.warning(f"[DailySync] 工程师跳过无项目记录: {_eng_skipped_no_project} 条")
+            logger.info(f"[DailySync] 工程师无项目记录(已兜底处理): {_eng_skipped_no_project} 条")
 
         # 处理驾驶员
         _drv_logged = 0
@@ -314,10 +314,9 @@ async def _auto_sync_daily():
                 _drv_skipped_no_project += 1
                 if _drv_skipped_no_project <= 5:
                     logger.warning(
-                        f"[DailySync] 跳过无项目驾驶员: person={drv.person_name}, date={drv.record_date}, "
+                        f"[DailySync] 驾驶员无项目(使用兜底id=1): person={drv.person_name}, date={drv.record_date}, "
                         f"requirement_code={drv.requirement_code}, test_order_id={drv.test_order_id}"
                     )
-                continue
             # 调试：打印前3条驾驶员的审批值
             if _drv_logged < 3:
                 _drv_logged += 1
@@ -336,7 +335,7 @@ async def _auto_sync_daily():
             req_code = (drv.requirement_code or "").strip()
             drv_to_id = _resolve_test_order_id(req_code, drv.test_order_id)
             # ★ 通过 test_order_id 覆盖 project_id（使用试验单号看板中的项目信息）
-            drv_proj_id = drv.project_id
+            drv_proj_id = drv.project_id or 1  # 无项目时兜底为1
             if drv_to_id and to_project_map.get(drv_to_id):
                 drv_proj_id = to_project_map[drv_to_id]
             tno = drv.test_order.test_order_no if drv.test_order else (req_code if drv_to_id else "")
@@ -375,7 +374,7 @@ async def _auto_sync_daily():
                 defaults.update({"project_id": drv_proj_id, "record_date": drv.record_date, "person_name": drv.person_name})
                 pending_create[person_key] = (defaults, src_key)
         if _drv_skipped_no_project > 0:
-            logger.warning(f"[DailySync] 驾驶员跳过无项目记录: {_drv_skipped_no_project} 条")
+            logger.info(f"[DailySync] 驾驶员无项目记录(已兜底处理): {_drv_skipped_no_project} 条")
 
         # ── 第二阶段：批量写入数据库 ──
         to_create = [d for d, _ in pending_create.values()]
@@ -442,7 +441,8 @@ async def _auto_sync_daily():
         for ec_id, total in ec_amounts.items():
             await ExpenseCode.filter(id=ec_id).update(used_amount=float(total))
 
-        logger.info(f"[DailySync] 同步完成: 新建 {len(to_create)}, 更新 {len(to_update)}, 结算 {len(to_amounts)} 个试验单")
+        logger.info(f"[DailySync] 同步完成: 新建 {len(to_create)}, 更新 {len(to_update)}, 结算 {len(to_amounts)} 个试验单, "
+                     f"无项目(已兜底): 工程师{_eng_skipped_no_project}条, 驾驶员{_drv_skipped_no_project}条")
     except Exception as e:
         import traceback
         logger.error(f"[DailySync] 同步失败: {traceback.format_exc()}")
@@ -454,61 +454,53 @@ async def _auto_sync_daily():
 
 @router.post("/init-menus", summary="初始化费用管理菜单")
 async def init_expense_menus():
-    """手动初始化费用管理菜单（首次部署需要调用一次）"""
-    exists = await Menu.filter(name="费用管理").first()
-    if exists:
-        return Success(msg="菜单已存在，无需重复初始化")
+    """初始化费用管理菜单（可重复调用：父/子菜单已存在则跳过，仅补建缺失项）。
 
-    expense_menu = await Menu.create(
-        menu_type=MenuType.CATALOG,
-        name="费用管理",
-        path="/expense-management",
-        order=5,
-        parent_id=0,
-        icon="material-symbols:payments-outline",
-        is_hidden=False,
-        component="Layout",
-        keepalive=False,
-        redirect="/expense-management/dashboard",
-    )
+    注意：父菜单 redirect 指向 /expense-management/dashboard，因此必须存在
+    path=dashboard 的子菜单，否则点击「费用管理」会因 redirect 目标无路由而落到 404。
+    """
+    expense_menu = await Menu.filter(name="费用管理").first()
+    if not expense_menu:
+        expense_menu = await Menu.create(
+            menu_type=MenuType.CATALOG,
+            name="费用管理",
+            path="/expense-management",
+            order=5,
+            parent_id=0,
+            icon="material-symbols:payments-outline",
+            is_hidden=False,
+            component="Layout",
+            keepalive=False,
+            redirect="/expense-management/dashboard",
+        )
 
-    children = [
-        Menu(
-            menu_type=MenuType.MENU,
-            name="预算总览",
-            path="project-manage",
-            order=1,
-            parent_id=expense_menu.id,
-            icon="material-symbols:folder-outline",
-            is_hidden=False,
-            component="/expense-management/project-manage",
-            keepalive=False,
-        ),
-        Menu(
-            menu_type=MenuType.MENU,
-            name="业务支持",
-            path="daily-record",
-            order=2,
-            parent_id=expense_menu.id,
-            icon="material-symbols:edit-calendar",
-            is_hidden=False,
-            component="/expense-management/daily-record",
-            keepalive=False,
-        ),
-        Menu(
-            menu_type=MenuType.MENU,
-            name="月度结算",
-            path="monthly-settlement",
-            order=3,
-            parent_id=expense_menu.id,
-            icon="material-symbols:description",
-            is_hidden=False,
-            component="/expense-management/monthly-settlement",
-            keepalive=False,
-        ),
+    # (path, name, component, icon, order)
+    # dashboard 必须存在：父菜单 redirect 指向 /expense-management/dashboard
+    children_def = [
+        ("dashboard", "费用概览", "/expense-management/dashboard", "material-symbols:dashboard-outline", 1),
+        ("daily-record", "每日记录", "/expense-management/daily-record", "material-symbols:edit-note-outline", 2),
+        ("monthly-settlement", "月度结算", "/expense-management/monthly-settlement", "material-symbols:receipt-long-outline", 3),
+        ("budget-alert", "预算预警", "/expense-management/budget-alert", "material-symbols:warning-outline", 4),
     ]
-    await Menu.bulk_create(children)
-    return Success(msg="费用管理菜单初始化成功")
+    existing_paths = {m.path for m in await Menu.filter(parent_id=expense_menu.id)}
+    to_create = [
+        Menu(
+            menu_type=MenuType.MENU,
+            name=name,
+            path=path,
+            order=order,
+            parent_id=expense_menu.id,
+            icon=icon,
+            is_hidden=False,
+            component=component,
+            keepalive=False,
+        )
+        for path, name, component, icon, order in children_def
+        if path not in existing_paths
+    ]
+    if to_create:
+        await Menu.bulk_create(to_create)
+    return Success(msg=f"费用管理菜单就绪，本次新建 {len(to_create)} 个子项")
 
 
 @router.post("/rename-menu", summary="清理旧菜单：删除试验需求菜单，恢复业务支持")

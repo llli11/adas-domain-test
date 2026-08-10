@@ -243,7 +243,7 @@ onBeforeUnmount(() => {
           <span class="count">{{ filteredVehicles.length }}辆</span>
           <NButton text size="small" @click="handleResetFilters">重置</NButton>
           <NButton size="small" :type="showMap ? 'primary' : 'default'" @click="showMap = !showMap" style="flex-shrink:0">
-            <template #icon><TheIcon :icon="showMap ? 'material-symbols:map' : 'material-symbols:map-off'" :size="16" /></template>
+            <template #icon><TheIcon :icon="showMap ? 'material-symbols:map' : 'material-symbols:map-outline'" :size="16" /></template>
             {{ showMap ? '隐藏地图' : '显示地图' }}
           </NButton>
           <span v-if="syncing" style="display:inline-flex;align-items:center;gap:4px;color:#2e7d32;font-size:12px;white-space:nowrap"><NSpin size="small" /> 同步中…</span>

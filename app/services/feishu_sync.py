@@ -1,6 +1,6 @@
 """飞书多维表格同步服务"""
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -272,9 +272,9 @@ class FeishuSyncService:
                 # 日期字段：飞书返回毫秒时间戳，需转为 date 对象
                 if vehicle_field in ('borrow_expire_date', 'temp_plate_expire_date'):
                     if value > 10000000000:
-                        value = date.fromtimestamp(value / 1000)
+                        value = datetime.fromtimestamp(value / 1000, tz=timezone.utc).date()
                     elif value > 0:
-                        value = date.fromtimestamp(value)
+                        value = datetime.fromtimestamp(value, tz=timezone.utc).date()
                     else:
                         value = None
                 # 文本字段收数字 → 转字符串或日期

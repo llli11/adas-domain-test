@@ -82,13 +82,13 @@ export const EMPTY_ROUTE = {
   component: null,
 }
 
-const modules = import.meta.glob('@/views/**/route.js', { eager: true })
+const modules = import.meta.glob('../../views/**/route.js', { eager: true })
 const asyncRoutes = []
 Object.keys(modules).forEach((key) => {
   asyncRoutes.push(modules[key].default)
 })
 
 // 加载 views 下所有 vue 文件
-const vueModules = import.meta.glob('@/views/**/*.vue')
+const vueModules = import.meta.glob('../../views/**/*.vue')
 
 export { asyncRoutes, vueModules }

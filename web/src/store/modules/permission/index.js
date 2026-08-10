@@ -8,29 +8,34 @@ function getComponent(componentPath) {
   
   let comp = null
   
+  const resolveKey = (pattern) => {
+    // 尝试两种key格式：绝对路径 /src/views/... 和 相对路径 ../../views/...
+    return vueModules[pattern] || vueModules[pattern.replace('/src/', '../../')]
+  }
+  
   // 方式1: /src/views/ecu/target.vue
-  comp = vueModules[`/src/views${componentPath}.vue`]
+  comp = resolveKey(`/src/views${componentPath}.vue`)
   if (comp) return comp
   
   // 方式2: /src/views/ecu/target/index.vue
-  comp = vueModules[`/src/views${componentPath}/index.vue`]
+  comp = resolveKey(`/src/views${componentPath}/index.vue`)
   if (comp) return comp
   
   // 方式3: /src/views/target/index.vue (去掉ecu前缀)
   if (componentPath.startsWith('/ecu/')) {
     const shortPath = componentPath.replace('/ecu', '')
-    comp = vueModules[`/src/views${shortPath}/index.vue`]
+    comp = resolveKey(`/src/views${shortPath}/index.vue`)
     if (comp) return comp
-    comp = vueModules[`/src/views${shortPath}.vue`]
+    comp = resolveKey(`/src/views${shortPath}.vue`)
     if (comp) return comp
   }
   
   // 方式4: 完全去掉ecu，只保留最后的路径
   const parts = componentPath.split('/')
   const lastPart = parts[parts.length - 1]
-  comp = vueModules[`/src/views/target/index.vue`]
+  comp = resolveKey(`/src/views/${lastPart}/index.vue`)
   if (comp) return comp
-  comp = vueModules[`/src/views/target.vue`]
+  comp = resolveKey(`/src/views/${lastPart}.vue`)
   if (comp) return comp
   
   return comp

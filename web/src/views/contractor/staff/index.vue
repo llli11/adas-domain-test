@@ -176,7 +176,7 @@ const columns = [
       }),
       h(NPopconfirm, { onPositiveClick: () => handleResign(row) }, {
         trigger: () => h(NButton, { size: 'small', type: 'warning' },
-          { default: () => '离职', icon: renderIcon('material-symbols:exit-to-app-outline', { size: 16 }) }),
+          { default: () => '离职', icon: renderIcon('material-symbols:exit-to-app', { size: 16 }) }),
         default: () => h('div', {}, '确定将该人员设为离职吗?'),
       }),
     ]

@@ -14,6 +14,7 @@ from app.core.init_app import (
     register_exceptions,
     register_routers,
 )
+from app.core.scheduler import daily_scheduler
 
 try:
     from app.settings.config import settings
@@ -48,6 +49,8 @@ async def _daily_staff_reset():
 async def lifespan(app: FastAPI):
     try:
         await init_data()
+        # 启动每日凌晨2点飞书自动同步调度器
+        await daily_scheduler.start()
     except Exception as e:
         logger.warning(f"Database initialization failed (some features may be unavailable): {e}")
     reset_task = asyncio.create_task(_daily_staff_reset())
@@ -57,6 +60,7 @@ async def lifespan(app: FastAPI):
         await reset_task
     except asyncio.CancelledError:
         pass
+    await daily_scheduler.stop()
     await Tortoise.close_connections()
 
 

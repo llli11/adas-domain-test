@@ -1,7 +1,7 @@
 """飞书多维表格同步服务"""
 import asyncio
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import time
@@ -85,10 +85,13 @@ FEISHU_ENG_ATTENDANCE_FIELD_MAP = {
     "当天是否加班": "is_overtime",
     "加班时长": "overtime_hours",
     "当天加班时长(h)": "overtime_hours",
+    "当天加班时长h": "overtime_hours",
     "工作日时长": "work_duration",
     "当天工作日时长(h)": "work_duration",
+    "当天工作日时长h": "work_duration",
     "总工时": "total_hours",
     "当天总工时(h)": "total_hours",
+    "当天总工时h": "total_hours",
     "出差状态": "travel_status",
     "工作地点": "work_location",
     "当天工作量": "workload",
@@ -128,10 +131,13 @@ FEISHU_DRV_ATTENDANCE_FIELD_MAP = {
     "当天是否加班": "is_overtime",
     "加班时长": "overtime_hours",
     "当天加班时长(h)": "overtime_hours",
+    "当天加班时长h": "overtime_hours",
     "工作日时长": "work_duration",
     "当天工作日时长(h)": "work_duration",
+    "当天工作日时长h": "work_duration",
     "总工时": "total_hours",
     "当天总工时(h)": "total_hours",
+    "当天总工时h": "total_hours",
     "出差状态": "travel_status",
     "工作地点": "work_location",
     "初始里程": "vehicle_initial_mileage",
@@ -343,9 +349,9 @@ class FeishuSyncService:
                     # 日期字段：飞书返回毫秒时间戳，需转为 date 对象
                     if vehicle_field in ('borrow_expire_date', 'temp_plate_expire_date', 'test_date'):
                         if value > 10000000000:  # 毫秒时间戳
-                            value = date.fromtimestamp(value / 1000)
+                            value = datetime.fromtimestamp(value / 1000, tz=timezone.utc).date()
                         elif value > 0:  # 秒级时间戳
-                            value = date.fromtimestamp(value)
+                            value = datetime.fromtimestamp(value, tz=timezone.utc).date()
                         else:
                             value = None
                     else:
@@ -547,6 +553,15 @@ class FeishuSyncService:
         _proj_debug_logged = 0  # 调试计数器（项目映射）
         _token_debug_logged = 0  # 调试计数器（token解析）
 
+        # safe_float 在下方调试块(打印工时原始值)与构建 defaults 时都会用到，
+        # 必须在 for 循环外提前定义；否则循环内后置的 def 会让 Python 将其视为
+        # 局部变量，导致首条记录即抛 UnboundLocalError，工程师/驾驶员考勤一条都写不进去。
+        def safe_float(val, default=0):
+            try:
+                return float(val) if val is not None else default
+            except (ValueError, TypeError):
+                return default
+
         for record in records:
             fields = record.get("fields", {})
             record_id = record.get("record_id", "unknown")
@@ -591,6 +606,29 @@ class FeishuSyncService:
                 raw_end = fields.get("下班时间")
                 logger.info(f"[Feishu] 时间字段原始值: person={person_name}, start={raw_start!r}, end={raw_end!r}, mapped_start={mapped.get('start_time')!r}, mapped_end={mapped.get('end_time')!r}")
 
+            # 调试：打印工时字段原始值（前5条）
+            if _debug_logged <= 5:
+                raw_work_hours = fields.get("当天工作日时长h")
+                raw_overtime = fields.get("当天加班时长h")
+                raw_total = fields.get("当天总工时h")
+                mapped_wd = mapped.get("work_duration")
+                mapped_ot = mapped.get("overtime_hours")
+                mapped_th = mapped.get("total_hours")
+                logger.info(
+                    f"[Feishu] 工时字段原始值: person={person_name}, date={record_date_str}, "
+                    f"raw_work_hours={raw_work_hours!r}, raw_overtime={raw_overtime!r}, raw_total={raw_total!r}, "
+                    f"mapped_wd={mapped_wd!r}, mapped_ot={mapped_ot!r}, mapped_th={mapped_th!r}"
+                )
+                # 如果工时为0，额外warn
+                no_h = safe_float(raw_work_hours, 0)
+                ot_h = safe_float(raw_overtime, 0)
+                if no_h == 0 and ot_h == 0 and person_name:
+                    logger.warning(
+                        f"[Feishu] 工时异常(0工时): person={person_name}, date={record_date_str}, "
+                        f"raw_work_hours={raw_work_hours!r}, raw_overtime={raw_overtime!r}, "
+                        f"fields_keys={list(fields.keys())[:20]}"
+                    )
+
             # 调试：打印审批字段原始值（前3条）
             if _debug_logged <= 5:
                 appr1_raw = fields.get("审批人1审批结果")
@@ -633,12 +671,6 @@ class FeishuSyncService:
                 continue
 
             # 处理数值字段
-            def safe_float(val, default=0):
-                try:
-                    return float(val) if val is not None else default
-                except (ValueError, TypeError):
-                    return default
-
             def safe_int(val, default=0):
                 try:
                     return int(float(val)) if val is not None else default

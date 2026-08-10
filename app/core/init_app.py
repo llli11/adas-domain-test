@@ -573,6 +573,170 @@ async def init_menus() -> None:
                     keepalive=False,
                 )
 
+        # 费用管理菜单初始化
+        expense_parent = await Menu.get_or_none(path="/expense-management")
+        if not expense_parent:
+            await _create_expense_management_menus()
+        else:
+            # 补充缺失的子菜单（如dashboard）
+            dashboard_menu = await Menu.get_or_none(path="dashboard", parent_id=expense_parent.id)
+            if not dashboard_menu:
+                # 确保redirect指向现有子菜单
+                if expense_parent.redirect != "/expense-management/dashboard":
+                    expense_parent.redirect = "/expense-management/dashboard"
+                    await expense_parent.save()
+                await _create_expense_management_menus()
+
+        # 工具管理菜单初始化
+        tool_parent = await Menu.get_or_none(path="/tool-management")
+        if not tool_parent:
+            await _create_tool_management_menus()
+
+
+async def _create_tool_management_menus():
+    """创建工具管理菜单"""
+    parent = await Menu.create(
+        menu_type=MenuType.CATALOG,
+        name="工具管理",
+        path="/tool-management",
+        order=10,
+        icon="material-symbols:handyman-outline",
+        component="Layout",
+        redirect="/tool-management/tool-ledger",
+        keepalive=True,
+    )
+    children = [
+        Menu(
+            menu_type=MenuType.MENU,
+            name="工具台账",
+            path="tool-ledger",
+            order=1,
+            parent_id=parent.id,
+            icon="material-symbols:inventory-2-outline",
+            is_hidden=False,
+            component="/tool-management/tool-ledger",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="工具借用",
+            path="tool-borrow",
+            order=2,
+            parent_id=parent.id,
+            icon="material-symbols:swap-horiz",
+            is_hidden=False,
+            component="/tool-management/tool-borrow",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="工具盘点",
+            path="tool-inventory",
+            order=3,
+            parent_id=parent.id,
+            icon="material-symbols:list-alt-outline",
+            is_hidden=False,
+            component="/tool-management/tool-inventory",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="工具需求",
+            path="tool-requirement",
+            order=4,
+            parent_id=parent.id,
+            icon="material-symbols:assignment-add-outline",
+            is_hidden=False,
+            component="/tool-management/tool-requirement",
+            keepalive=False,
+        ),
+    ]
+    await Menu.bulk_create(children)
+
+
+async def _create_expense_management_menus():
+    """创建费用管理菜单"""
+    parent = await Menu.create(
+        menu_type=MenuType.CATALOG,
+        name="费用管理",
+        path="/expense-management",
+        order=9,
+        icon="material-symbols:attach-money",
+        component="Layout",
+        redirect="/expense-management/dashboard",
+        keepalive=True,
+    )
+    children = [
+        Menu(
+            menu_type=MenuType.MENU,
+            name="工作台",
+            path="dashboard",
+            order=1,
+            parent_id=parent.id,
+            icon="material-symbols:dashboard",
+            is_hidden=False,
+            component="/expense-management/dashboard",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="每日记录",
+            path="daily-record",
+            order=2,
+            parent_id=parent.id,
+            icon="material-symbols:calendar-today",
+            is_hidden=False,
+            component="/expense-management/daily-record",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="月度结算",
+            path="monthly-settlement",
+            order=3,
+            parent_id=parent.id,
+            icon="material-symbols:receipt-long",
+            is_hidden=False,
+            component="/expense-management/monthly-settlement",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="费用看板",
+            path="expense-board",
+            order=4,
+            parent_id=parent.id,
+            icon="material-symbols:finance",
+            is_hidden=False,
+            component="/expense-management/expense-board",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="试验单费用看板",
+            path="test-order-board",
+            order=5,
+            parent_id=parent.id,
+            icon="material-symbols:chart-data",
+            is_hidden=False,
+            component="/expense-management/test-order-board",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="费用确认",
+            path="monthly-board",
+            order=6,
+            parent_id=parent.id,
+            icon="material-symbols:verified",
+            is_hidden=False,
+            component="/expense-management/monthly-board",
+            keepalive=False,
+        ),
+    ]
+    await Menu.bulk_create(children)
+
+
 async def init_apis():
     apis = await api_controller.model.exists()
     if not apis:
