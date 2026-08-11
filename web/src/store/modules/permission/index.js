@@ -113,7 +113,18 @@ export const usePermissionStore = defineStore('permission', {
       return basicRoutes.concat(asyncRoutes).concat(this.accessRoutes)
     },
     menus() {
-      return this.routes.filter((route) => route.name && !route.isHidden)
+      // 按 name 去重：accessRoutes 优先级最高，避免 basicRoutes 与动态菜单同名导致重复
+      const allRoutes = this.routes
+      const dynamicNames = new Set(this.accessRoutes.map((r) => r.name))
+      return allRoutes
+        .filter((route) => route.name && !route.isHidden)
+        .filter((route) => {
+          // 如果动态路由中已有同名路由，跳过静态路由中的重复项
+          if (dynamicNames.has(route.name) && !this.accessRoutes.includes(route)) {
+            return false
+          }
+          return true
+        })
     },
     apis() {
       return this.accessApis
