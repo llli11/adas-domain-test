@@ -549,6 +549,8 @@ class FeishuSyncService:
         to_create = []
         to_update = []  # list of (id, defaults)
         skipped_count = 0
+        feishu_keys = set()  # 飞书本次返回的 (record_date, person_name) 集合
+        feishu_dates = []  # 飞书本次返回的日期，用于确定删除边界
         _debug_logged = 0  # 调试计数器（审批字段）
         _proj_debug_logged = 0  # 调试计数器（项目映射）
         _token_debug_logged = 0  # 调试计数器（token解析）
@@ -911,6 +913,10 @@ class FeishuSyncService:
                     f"raw_proj_belong=[{_raw_proj_belong!r}], raw_proj_detail=[{_raw_proj_detail!r}]"
                 )
 
+            # ★ 记录飞书本次返回的 (日期, 人员)，用于删除飞书已删的本地记录
+            feishu_keys.add((str(record_date), person_name))
+            feishu_dates.append(record_date)
+
             # ★ 内存查找已有记录
             existing_id = existing_map.get((str(record_date), person_name))
             if existing_id:
@@ -942,13 +948,40 @@ class FeishuSyncService:
             updated_count = len(to_update)
             logger.info(f"[Feishu] 批量更新 {updated_count} 条记录")
 
-        message = f"同步完成: 共读取 {len(records)} 条，新增 {created_count}，更新 {updated_count}，跳过 {skipped_count}，新增项目 {created_proj}"
+        # ═══════════════════════════════════════════════════════════
+        # ★ 删除阶段：删除本次同步日期范围内、飞书已不存在的本地记录
+        # 仅删除 [飞书返回的最小日期, 最大日期] 范围内的记录，范围外不动；
+        # 并级联删除由这些考勤记录生成的 DailyRecord（source_id 指向被删考勤）
+        # ═══════════════════════════════════════════════════════════
+        deleted_count = 0
+        if feishu_dates:
+            from datetime import date as _date
+            from app.models.expense import DailyRecord
+            min_d, max_d = min(feishu_dates), max(feishu_dates)
+            to_delete_ids = [
+                eid for (rd, pn), eid in existing_map.items()
+                if min_d <= _date.fromisoformat(rd) <= max_d
+                and (rd, pn) not in feishu_keys
+            ]
+            if to_delete_ids:
+                # 级联删 DailyRecord（source_id 指向被删考勤的；source_type 匹配当前表）
+                await DailyRecord.filter(
+                    source_id__in=to_delete_ids, source_type=record_type
+                ).delete()
+                await AttendanceModel.filter(id__in=to_delete_ids).delete()
+                deleted_count = len(to_delete_ids)
+                logger.info(
+                    f"[Feishu] 删除 {deleted_count} 条飞书已删除的考勤记录"
+                    f"（范围 {min_d}~{max_d}, record_type={record_type}）"
+                )
+
+        message = f"同步完成: 共读取 {len(records)} 条，新增 {created_count}，更新 {updated_count}，删除 {deleted_count}，跳过 {skipped_count}，新增项目 {created_proj}"
         logger.info(f"[Feishu] {message}")
         return {
             "success": True, "message": message,
             "total_records": len(records),
-            "created": created_count, "updated": updated_count, "skipped": skipped_count,
-            "project_created": created_proj,
+            "created": created_count, "updated": updated_count, "deleted": deleted_count,
+            "skipped": skipped_count, "project_created": created_proj,
         }
 
     async def sync_personnel_from_feishu(self, table_id: str) -> Dict[str, Any]:
