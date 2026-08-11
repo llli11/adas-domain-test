@@ -480,6 +480,10 @@ async def init_menus() -> None:
         await Menu.bulk_create(contractor_children)
         # 首次初始化时创建版本管理菜单
         await _create_version_menus()
+        # 首次初始化时创建费用管理菜单
+        await _create_expense_management_menus()
+        # 首次初始化时创建工具管理菜单
+        await _create_tool_management_menus()
     else:
         # 检查并补充缺失的ECU菜单
         ecu_menu = await Menu.get_or_none(path="/ecu")
