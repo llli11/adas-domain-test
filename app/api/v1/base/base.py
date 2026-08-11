@@ -58,7 +58,14 @@ async def get_user_menu():
         for role_obj in role_objs:
             menu = await role_obj.menus
             menus.extend(menu)
-        menus = list(set(menus))
+        # 按 id 去重（set() 按对象 identity 去重，多角色场景下同 id 不同实例无法去重）
+        seen_ids = set()
+        deduped = []
+        for m in menus:
+            if m.id not in seen_ids:
+                seen_ids.add(m.id)
+                deduped.append(m)
+        menus = deduped
     parent_menus: list[Menu] = []
     for menu in menus:
         if menu.parent_id == 0:
