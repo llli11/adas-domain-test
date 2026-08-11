@@ -576,21 +576,19 @@ async def init_menus() -> None:
         # 清理重复的父级菜单（保留最早创建的）
         await _dedup_parent_menus(["/expense-management", "/tool-management"])
 
-        # 清理前端无对应页面组件的废弃子菜单
-        await Menu.filter(
-            path__in=["expense-board", "test-order-board", "monthly-board"]
-        ).delete()
-
         # 费用管理菜单初始化
         expense_parent = await Menu.get_or_none(path="/expense-management")
         if not expense_parent:
             await _create_expense_management_menus()
         else:
-            # 补充缺失的子菜单（不重复创建父菜单）
+            # 补充缺失的子菜单（只补创建，不删除，不重复创建父菜单）
             expense_children = [
                 ("工作台", "dashboard", 1, "material-symbols:dashboard", "/expense-management/dashboard", False),
                 ("每日记录", "daily-record", 2, "material-symbols:calendar-today", "/expense-management/daily-record", False),
                 ("月度结算", "monthly-settlement", 3, "material-symbols:receipt-long", "/expense-management/monthly-settlement", False),
+                ("费用看板", "expense-board", 4, "material-symbols:finance", "/expense-management/expense-board", False),
+                ("试验单费用看板", "test-order-board", 5, "material-symbols:chart-data", "/expense-management/test-order-board", False),
+                ("费用确认", "monthly-board", 6, "material-symbols:verified", "/expense-management/monthly-board", False),
             ]
             for name, path, order, icon, component, keepalive in expense_children:
                 if not await Menu.filter(path=path, parent_id=expense_parent.id).exists():
@@ -617,9 +615,9 @@ async def init_menus() -> None:
 
 
 async def _dedup_parent_menus(paths: list):
-    """删除重复的父级菜单，保留最早创建的（最小ID）"""
+    """删除重复的父级菜单，保留最早创建的（最小ID），只在 parent_id=0 层级去重"""
     for path in paths:
-        parents = await Menu.filter(path=path).all()
+        parents = await Menu.filter(path=path, parent_id=0).all()
         if len(parents) > 1:
             keep = min(parents, key=lambda m: m.id)
             for m in parents:
@@ -734,6 +732,39 @@ async def _create_expense_management_menus():
             icon="material-symbols:receipt-long",
             is_hidden=False,
             component="/expense-management/monthly-settlement",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="费用看板",
+            path="expense-board",
+            order=4,
+            parent_id=parent.id,
+            icon="material-symbols:finance",
+            is_hidden=False,
+            component="/expense-management/expense-board",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="试验单费用看板",
+            path="test-order-board",
+            order=5,
+            parent_id=parent.id,
+            icon="material-symbols:chart-data",
+            is_hidden=False,
+            component="/expense-management/test-order-board",
+            keepalive=False,
+        ),
+        Menu(
+            menu_type=MenuType.MENU,
+            name="费用确认",
+            path="monthly-board",
+            order=6,
+            parent_id=parent.id,
+            icon="material-symbols:verified",
+            is_hidden=False,
+            component="/expense-management/monthly-board",
             keepalive=False,
         ),
     ]
