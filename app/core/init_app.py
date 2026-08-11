@@ -339,6 +339,15 @@ async def _create_vehicle_menus() -> None:
 
 async def init_menus() -> None:
     """初始化菜单"""
+    # 每次启动先清理可能残留的重复父级菜单
+    for dup_path in ["/expense-management", "/tool-management"]:
+        dupes = await Menu.filter(path=dup_path, parent_id=0).order_by("id").all()
+        if len(dupes) > 1:
+            for m in dupes[1:]:
+                await Menu.filter(parent_id=m.id).delete()
+                await m.delete()
+            logger.warning(f"[Menu] 清理了 {len(dupes) - 1} 个重复的 {dup_path} 菜单")
+
     menus = await Menu.exists()
     if not menus:
         parent_menu = await Menu.create(
@@ -480,9 +489,7 @@ async def init_menus() -> None:
         await Menu.bulk_create(contractor_children)
         # 首次初始化时创建版本管理菜单
         await _create_version_menus()
-        # 首次初始化时创建费用管理菜单
         await _create_expense_management_menus()
-        # 首次初始化时创建工具管理菜单
         await _create_tool_management_menus()
     else:
         # 检查并补充缺失的ECU菜单
@@ -576,66 +583,21 @@ async def init_menus() -> None:
                     component="/contractor/assessment",
                     keepalive=False,
                 )
-
-        # 清理重复的父级菜单（保留最早创建的）
-        await _dedup_parent_menus(["/expense-management", "/tool-management"])
-
-        # 费用管理菜单初始化
-        expense_parent = await Menu.get_or_none(path="/expense-management")
-        if not expense_parent:
+        # 检查并补充缺失的费用管理菜单
+        expense_menu = await Menu.get_or_none(path="/expense-management")
+        if not expense_menu:
             await _create_expense_management_menus()
-        else:
-            # 补充缺失的子菜单（只补创建，不删除，不重复创建父菜单）
-            expense_children = [
-                ("工作台", "dashboard", 1, "material-symbols:dashboard", "/expense-management/dashboard", False),
-                ("每日记录", "daily-record", 2, "material-symbols:calendar-today", "/expense-management/daily-record", False),
-                ("月度结算", "monthly-settlement", 3, "material-symbols:receipt-long", "/expense-management/monthly-settlement", False),
-                ("费用看板", "expense-board", 4, "material-symbols:finance", "/expense-management/expense-board", False),
-                ("试验单费用看板", "test-order-board", 5, "material-symbols:chart-data", "/expense-management/test-order-board", False),
-                ("费用确认", "monthly-board", 6, "material-symbols:verified", "/expense-management/monthly-board", False),
-            ]
-            for name, path, order, icon, component, keepalive in expense_children:
-                if not await Menu.filter(path=path, parent_id=expense_parent.id).exists():
-                    await Menu.create(
-                        menu_type=MenuType.MENU,
-                        name=name,
-                        path=path,
-                        order=order,
-                        parent_id=expense_parent.id,
-                        icon=icon,
-                        is_hidden=False,
-                        component=component,
-                        keepalive=keepalive,
-                    )
-            # 确保redirect指向工作台
-            if expense_parent.redirect != "/expense-management/dashboard":
-                expense_parent.redirect = "/expense-management/dashboard"
-                await expense_parent.save()
-
-        # 工具管理菜单初始化
-        tool_parent = await Menu.get_or_none(path="/tool-management")
-        if not tool_parent:
+        # 检查并补充缺失的工具管理菜单
+        tool_menu = await Menu.get_or_none(path="/tool-management")
+        if not tool_menu:
             await _create_tool_management_menus()
 
 
-async def _dedup_parent_menus(paths: list):
-    """删除重复的父级菜单，保留最早创建的（最小ID），只在 parent_id=0 层级去重"""
-    for path in paths:
-        parents = await Menu.filter(path=path, parent_id=0).all()
-        if len(parents) > 1:
-            keep = min(parents, key=lambda m: m.id)
-            for m in parents:
-                if m.id != keep.id:
-                    await Menu.filter(parent_id=m.id).delete()
-                    await m.delete()
-            logger.warning(f"[Menu] 清理了 {len(parents) - 1} 个重复的 {path} 菜单，保留 id={keep.id}")
-
-
 async def _create_tool_management_menus():
-    """创建工具管理菜单"""
+    """创建设备管理菜单"""
     parent = await Menu.create(
         menu_type=MenuType.CATALOG,
-        name="工具管理",
+        name="设备管理",
         path="/tool-management",
         order=10,
         icon="material-symbols:handyman-outline",
@@ -646,7 +608,7 @@ async def _create_tool_management_menus():
     children = [
         Menu(
             menu_type=MenuType.MENU,
-            name="工具台账",
+            name="设备台账",
             path="tool-ledger",
             order=1,
             parent_id=parent.id,
@@ -657,7 +619,7 @@ async def _create_tool_management_menus():
         ),
         Menu(
             menu_type=MenuType.MENU,
-            name="工具借用",
+            name="设备借用",
             path="tool-borrow",
             order=2,
             parent_id=parent.id,
@@ -668,7 +630,7 @@ async def _create_tool_management_menus():
         ),
         Menu(
             menu_type=MenuType.MENU,
-            name="工具盘点",
+            name="设备盘点",
             path="tool-inventory",
             order=3,
             parent_id=parent.id,
@@ -679,7 +641,7 @@ async def _create_tool_management_menus():
         ),
         Menu(
             menu_type=MenuType.MENU,
-            name="工具需求",
+            name="设备需求",
             path="tool-requirement",
             order=4,
             parent_id=parent.id,
@@ -707,11 +669,11 @@ async def _create_expense_management_menus():
     children = [
         Menu(
             menu_type=MenuType.MENU,
-            name="工作台",
+            name="费用概览",
             path="dashboard",
             order=1,
             parent_id=parent.id,
-            icon="material-symbols:dashboard",
+            icon="material-symbols:dashboard-outline",
             is_hidden=False,
             component="/expense-management/dashboard",
             keepalive=False,
@@ -722,7 +684,7 @@ async def _create_expense_management_menus():
             path="daily-record",
             order=2,
             parent_id=parent.id,
-            icon="material-symbols:calendar-today",
+            icon="material-symbols:edit-note-outline",
             is_hidden=False,
             component="/expense-management/daily-record",
             keepalive=False,
@@ -733,42 +695,20 @@ async def _create_expense_management_menus():
             path="monthly-settlement",
             order=3,
             parent_id=parent.id,
-            icon="material-symbols:receipt-long",
+            icon="material-symbols:receipt-long-outline",
             is_hidden=False,
             component="/expense-management/monthly-settlement",
             keepalive=False,
         ),
         Menu(
             menu_type=MenuType.MENU,
-            name="费用看板",
-            path="expense-board",
+            name="预算预警",
+            path="budget-alert",
             order=4,
             parent_id=parent.id,
-            icon="material-symbols:finance",
+            icon="material-symbols:warning-outline",
             is_hidden=False,
-            component="/expense-management/expense-board",
-            keepalive=False,
-        ),
-        Menu(
-            menu_type=MenuType.MENU,
-            name="试验单费用看板",
-            path="test-order-board",
-            order=5,
-            parent_id=parent.id,
-            icon="material-symbols:chart-data",
-            is_hidden=False,
-            component="/expense-management/test-order-board",
-            keepalive=False,
-        ),
-        Menu(
-            menu_type=MenuType.MENU,
-            name="费用确认",
-            path="monthly-board",
-            order=6,
-            parent_id=parent.id,
-            icon="material-symbols:verified",
-            is_hidden=False,
-            component="/expense-management/monthly-board",
+            component="/expense-management/budget-alert",
             keepalive=False,
         ),
     ]

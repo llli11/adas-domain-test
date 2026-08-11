@@ -459,7 +459,7 @@ async def init_expense_menus():
     注意：父菜单 redirect 指向 /expense-management/dashboard，因此必须存在
     path=dashboard 的子菜单，否则点击「费用管理」会因 redirect 目标无路由而落到 404。
     """
-    expense_menu = await Menu.filter(name="费用管理").first()
+    expense_menu = await Menu.get_or_none(name="费用管理", parent_id=0)
     if not expense_menu:
         expense_menu = await Menu.create(
             menu_type=MenuType.CATALOG,
