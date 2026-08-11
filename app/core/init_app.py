@@ -339,14 +339,8 @@ async def _create_vehicle_menus() -> None:
 
 async def init_menus() -> None:
     """初始化菜单"""
-    # 每次启动先清理可能残留的重复父级菜单
-    for dup_path in ["/expense-management", "/tool-management"]:
-        dupes = await Menu.filter(path=dup_path, parent_id=0).order_by("id").all()
-        if len(dupes) > 1:
-            for m in dupes[1:]:
-                await Menu.filter(parent_id=m.id).delete()
-                await m.delete()
-            logger.warning(f"[Menu] 清理了 {len(dupes) - 1} 个重复的 {dup_path} 菜单")
+    # 每次启动先清理可能残留的重复父级菜单，并修正关键字段
+    await _dedup_parent_menus()
 
     menus = await Menu.exists()
     if not menus:
@@ -583,14 +577,18 @@ async def init_menus() -> None:
                     component="/contractor/assessment",
                     keepalive=False,
                 )
-        # 检查并补充缺失的费用管理菜单
+        # 费用管理菜单：不存在则创建，已存在则同步子菜单
         expense_menu = await Menu.get_or_none(path="/expense-management")
         if not expense_menu:
             await _create_expense_management_menus()
-        # 检查并补充缺失的工具管理菜单
+        else:
+            await _sync_expense_management_menus(expense_menu)
+        # 工具管理菜单：不存在则创建，已存在则同步子菜单（含名称迁移）
         tool_menu = await Menu.get_or_none(path="/tool-management")
         if not tool_menu:
             await _create_tool_management_menus()
+        else:
+            await _sync_tool_management_menus(tool_menu)
 
 
 async def _create_tool_management_menus():
@@ -713,6 +711,141 @@ async def _create_expense_management_menus():
         ),
     ]
     await Menu.bulk_create(children)
+
+
+async def _dedup_parent_menus():
+    """清理重复的父级菜单（保留最早创建的一条），并修正关键字段"""
+    # 费用管理去重
+    expense_parents = await Menu.filter(path="/expense-management", parent_id=0).order_by("id").all()
+    if len(expense_parents) > 1:
+        keep = expense_parents[0]
+        for m in expense_parents[1:]:
+            await Menu.filter(parent_id=m.id).delete()
+            await m.delete()
+        logger.warning(f"[Menu] 清理了 {len(expense_parents) - 1} 个重复的 /expense-management 菜单，保留 id={keep.id}")
+    if expense_parents:
+        parent = expense_parents[0]
+        if parent.name != "费用管理" or parent.redirect != "/expense-management/dashboard":
+            parent.name = "费用管理"
+            parent.redirect = "/expense-management/dashboard"
+            parent.component = "Layout"
+            parent.keepalive = True
+            await parent.save()
+            logger.info(f"[Menu] 修正 /expense-management 菜单字段")
+
+    # 工具管理去重（含名称迁移：工具管理 → 设备管理）
+    tool_parents = await Menu.filter(path="/tool-management", parent_id=0).order_by("id").all()
+    if len(tool_parents) > 1:
+        keep = tool_parents[0]
+        for m in tool_parents[1:]:
+            await Menu.filter(parent_id=m.id).delete()
+            await m.delete()
+        logger.warning(f"[Menu] 清理了 {len(tool_parents) - 1} 个重复的 /tool-management 菜单，保留 id={keep.id}")
+    if tool_parents:
+        parent = tool_parents[0]
+        if parent.name != "设备管理" or parent.redirect != "/tool-management/tool-ledger":
+            old_name = parent.name
+            parent.name = "设备管理"
+            parent.redirect = "/tool-management/tool-ledger"
+            parent.component = "Layout"
+            parent.keepalive = True
+            await parent.save()
+            logger.info(f"[Menu] 修正 /tool-management 菜单名称: {old_name} → 设备管理")
+
+
+async def _sync_expense_management_menus(parent: Menu):
+    """同步费用管理子菜单：补缺失、修正父菜单字段"""
+    # 确保父菜单关键字段正确
+    updated = False
+    if parent.name != "费用管理":
+        parent.name = "费用管理"
+        updated = True
+    if parent.redirect != "/expense-management/dashboard":
+        parent.redirect = "/expense-management/dashboard"
+        updated = True
+    if parent.component != "Layout":
+        parent.component = "Layout"
+        updated = True
+    if not parent.keepalive:
+        parent.keepalive = True
+        updated = True
+    if updated:
+        await parent.save()
+        logger.info("[Menu] 修正费用管理父菜单字段")
+
+    children_def = [
+        ("费用概览", "dashboard", 1, "material-symbols:dashboard-outline", "/expense-management/dashboard", False),
+        ("每日记录", "daily-record", 2, "material-symbols:edit-note-outline", "/expense-management/daily-record", False),
+        ("月度结算", "monthly-settlement", 3, "material-symbols:receipt-long-outline", "/expense-management/monthly-settlement", False),
+        ("预算预警", "budget-alert", 4, "material-symbols:warning-outline", "/expense-management/budget-alert", False),
+    ]
+    for name, path, order, icon, component, keepalive in children_def:
+        if not await Menu.filter(path=path, parent_id=parent.id).exists():
+            await Menu.create(
+                menu_type=MenuType.MENU,
+                name=name, path=path, order=order,
+                parent_id=parent.id, icon=icon,
+                is_hidden=False, component=component, keepalive=keepalive,
+            )
+            logger.info(f"[Menu] 补充创建费用管理子菜单: {name}")
+
+
+async def _sync_tool_management_menus(parent: Menu):
+    """同步工具管理子菜单：补缺失、修正名称（工具管理 → 设备管理）"""
+    # 确保父菜单关键字段正确，统一名称为"设备管理"
+    updated = False
+    if parent.name != "设备管理":
+        old_name = parent.name
+        parent.name = "设备管理"
+        updated = True
+    else:
+        old_name = None
+    if parent.redirect != "/tool-management/tool-ledger":
+        parent.redirect = "/tool-management/tool-ledger"
+        updated = True
+    if parent.component != "Layout":
+        parent.component = "Layout"
+        updated = True
+    if not parent.keepalive:
+        parent.keepalive = True
+        updated = True
+    if updated:
+        await parent.save()
+        if old_name:
+            logger.info(f"[Menu] 修正工具管理父菜单名称: {old_name} → 设备管理")
+        else:
+            logger.info("[Menu] 修正工具管理父菜单字段")
+
+    # 同步子菜单名称（旧名称 → 新名称）
+    name_map = {
+        "tool-ledger": "设备台账",
+        "tool-borrow": "设备借用",
+        "tool-inventory": "设备盘点",
+        "tool-requirement": "设备需求",
+    }
+    for child_path, expected_name in name_map.items():
+        child = await Menu.get_or_none(path=child_path, parent_id=parent.id)
+        if child and child.name != expected_name:
+            old = child.name
+            child.name = expected_name
+            await child.save()
+            logger.info(f"[Menu] 子菜单名称修正: {old} → {expected_name}")
+
+    children_def = [
+        ("设备台账", "tool-ledger", 1, "material-symbols:inventory-2-outline", "/tool-management/tool-ledger", False),
+        ("设备借用", "tool-borrow", 2, "material-symbols:swap-horiz", "/tool-management/tool-borrow", False),
+        ("设备盘点", "tool-inventory", 3, "material-symbols:list-alt-outline", "/tool-management/tool-inventory", False),
+        ("设备需求", "tool-requirement", 4, "material-symbols:post-add", "/tool-management/tool-requirement", False),
+    ]
+    for name, path, order, icon, component, keepalive in children_def:
+        if not await Menu.filter(path=path, parent_id=parent.id).exists():
+            await Menu.create(
+                menu_type=MenuType.MENU,
+                name=name, path=path, order=order,
+                parent_id=parent.id, icon=icon,
+                is_hidden=False, component=component, keepalive=keepalive,
+            )
+            logger.info(f"[Menu] 补充创建设备管理子菜单: {name}")
 
 
 async def init_apis():
