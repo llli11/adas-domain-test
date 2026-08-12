@@ -1623,7 +1623,7 @@ async def feishu_table_fields(
     from app.api.v1.expense.feishu_sync import feishu_sync_service, EXPENSE_FEISHU_CONFIG
     cfg = EXPENSE_FEISHU_CONFIG
     try:
-        token = await feishu_sync_service.get_tenant_access_token(config=cfg)
+        token = feishu_sync_service._get_sdk_client(cfg)
     except Exception as e:
         return Fail(msg=f"获取token失败: {e}")
     table_id = cfg["TABLE_IDS"].get(table_key)
@@ -1648,7 +1648,7 @@ async def feishu_debug_budget(
     from app.models.expense import TestOrder
     cfg = EXPENSE_FEISHU_CONFIG
     try:
-        token = await feishu_sync_service.get_tenant_access_token(config=cfg)
+        token = feishu_sync_service._get_sdk_client(cfg)
     except Exception as e:
         return Fail(msg=f"获取token失败: {e}")
 
@@ -1891,7 +1891,7 @@ async def feishu_auto_sync():
             project_to_test_order = {} # 车型项目-选项 -> [同上]（opt token 不匹配时按车型项目匹配试验单）
             try:
                 from app.api.v1.expense.feishu_sync import EXPENSE_FEISHU_CONFIG as _CFG
-                _ptoken = await feishu_sync_service.get_tenant_access_token(config=_CFG)
+                _ptoken = feishu_sync_service._get_sdk_client(_CFG)
                 _precords = await feishu_sync_service._fetch_all_records(
                     _ptoken, _CFG["TABLE_IDS"]["PERSONNEL"], config=_CFG
                 )
@@ -2103,7 +2103,7 @@ async def feishu_engineer_log(
     from app.api.v1.expense.feishu_sync import feishu_sync_service, EXPENSE_FEISHU_CONFIG
     cfg = EXPENSE_FEISHU_CONFIG
     try:
-        token = await feishu_sync_service.get_tenant_access_token(config=cfg)
+        token = feishu_sync_service._get_sdk_client(cfg)
     except Exception as e:
         return Fail(msg=f"获取飞书token失败: {str(e)}")
 
@@ -2195,7 +2195,7 @@ async def feishu_driver_log(
     from app.api.v1.expense.feishu_sync import feishu_sync_service, EXPENSE_FEISHU_CONFIG
     cfg = EXPENSE_FEISHU_CONFIG
     try:
-        token = await feishu_sync_service.get_tenant_access_token(config=cfg)
+        token = feishu_sync_service._get_sdk_client(cfg)
     except Exception as e:
         return Fail(msg=f"获取飞书token失败: {str(e)}")
 
@@ -2293,7 +2293,7 @@ async def _get_personnel_test_order_map():
     cfg = EXPENSE_FEISHU_CONFIG
 
     try:
-        token = await feishu_sync_service.get_tenant_access_token(config=cfg)
+        token = feishu_sync_service._get_sdk_client(cfg)
     except Exception as e:
         logger.warning(f"[Feishu] 获取PERSONNEL表token失败: {e}")
         return {}
@@ -2373,7 +2373,7 @@ async def feishu_daily_record(
         return Success(data=cached["records"], total=cached["total"],
                        filtered_total=cached["filtered_total"], source=cached.get("source", "feishu_realtime"))
     try:
-        token = await feishu_sync_service.get_tenant_access_token(config=cfg)
+        token = feishu_sync_service._get_sdk_client(cfg)
     except Exception as e:
         return Fail(msg=f"获取飞书token失败: {str(e)}")
 

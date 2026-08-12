@@ -66,3 +66,5 @@ uvicorn==0.34.0
 uvloop==0.21.0; sys_platform != 'win32'
 watchfiles==1.0.4
 websockets==14.1
+# 飞书多维表格 SDK（使用 PersonalBaseToken 鉴权，不依赖开放平台 APP_ID/APP_SECRET）
+baseopensdk @ https://lf3-static.bytednsdoc.com/obj/eden-cn/lmeh7phbozvhoz/base-open-sdk/baseopensdk-0.0.13-py3-none-any.whl ; python_version >= "3.8"

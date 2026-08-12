@@ -8,6 +8,13 @@ import time
 import httpx
 from tortoise.expressions import Q
 
+# BaseOpenSDK（飞书多维表格 Python SDK，使用 PersonalBaseToken 鉴权）
+from baseopensdk import BaseClient
+from baseopensdk.api.base.v1 import (
+    ListAppTableRecordRequest,
+    ListAppTableRecordRequestBuilder,
+)
+
 from app.controllers.vehicle import vehicle_controller
 from app.log import logger
 from app.schemas.vehicles import VehicleCreate
@@ -30,9 +37,8 @@ DEFAULT_FEISHU_CONFIG = {
 
 # 费用管理飞书配置（数据源：考勤日志收集表 + 人员关系表）
 EXPENSE_FEISHU_CONFIG = {
-    "APP_ID": "cli_a90024aeadb81bcc",
-    "APP_SECRET": "niCTFud9R2cpOxc9mApN0oJdBCXXHbzz",
     "BASE_ID": "SpnObQT0ka1sdosw84Qcurfan3d",
+    "PERSONAL_BASE_TOKEN": "pt-RPIx6rpzoekDkzwma6PYrEQJ93dfZsYvaVGPU2mfAQAAxYxA8NGLgjyUd7r0",  # 从飞书多维表格页面 -> 高级权限 -> 个人授权码获取
     "TABLE_IDS": {
         "ENGINEER": "tbl1aVib9ds3DcIp",       # 工程师日志表
         "DRIVER": "tbllTJvADTSaJeNw",         # 驾驶员日志表
@@ -226,18 +232,47 @@ class FeishuSyncService:
             raise
 
     async def get_bitable_records(
-        self, token: str, table_id: str, page_token: Optional[str] = None,
+        self, token_or_client, table_id: str, page_token: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None, filter_formula: Optional[str] = None,
         field_names: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """获取飞书多维表格所有记录（由 Python 端进行日期过滤），遇瞬态错误自动重试
+        """获取飞书多维表格记录（自动识别 HTTP token 或 BaseOpenSDK client），遇瞬态错误自动重试
 
         field_names: 仅返回指定字段，可显著减小响应体积、降低单次请求耗时。
         """
+        # ★ SDK 模式：BaseOpenSDK client 对象
+        if hasattr(token_or_client, 'base'):
+            builder = (
+                ListAppTableRecordRequest.builder()
+                .table_id(table_id)
+                .page_size(500)
+            )
+            if page_token:
+                builder = builder.page_token(page_token)
+            if filter_formula:
+                builder = builder.filter(filter_formula)
+            if field_names:
+                builder = builder.field_names(field_names)
+            req = builder.build()
+            resp = token_or_client.base.v1.app_table_record.list(req)
+            if resp is None or resp.data is None:
+                return {}
+            data = resp.data
+            records = []
+            for item in (data.items or []):
+                rid = getattr(item, 'id', None) or getattr(item, 'record_id', '')
+                rfields = getattr(item, 'fields', None) or {}
+                records.append({"record_id": rid, "fields": rfields})
+            return {
+                "items": records,
+                "has_more": bool(data.has_more),
+                "page_token": data.page_token or "",
+            }
+
         cfg = config or self.config
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg['BASE_ID']}/tables/{table_id}/records"
         headers = {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {token_or_client}",
             "Content-Type": "application/json",
         }
         params = {"page_size": 500}
@@ -282,17 +317,51 @@ class FeishuSyncService:
                 logger.error(f"[Feishu] 获取记录异常: {e}")
                 raise
 
-    async def get_table_fields(self, token: str, table_id: str, config: Optional[Dict[str, Any]] = None, field_map: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
-        """获取飞书多维表格的字段列表，用于验证字段名匹配
+    async def get_table_fields(self, token_or_client, table_id: str, config: Optional[Dict[str, Any]] = None, field_map: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+        """获取飞书多维表格的字段列表（自动识别 HTTP token 或 BaseOpenSDK client），用于验证字段名匹配
 
         Args:
             field_map: 指定表对应的字段映射；为 None 时只记录字段名/类型，
                        不做"代码映射"比对（避免用车辆表映射去校验其它表导致误导性的"未映射"日志）。
         """
+        # ★ SDK 模式：BaseOpenSDK client 对象
+        if hasattr(token_or_client, 'base'):
+            from baseopensdk.api.base.v1 import ListAppTableFieldRequest
+            logger.info(f"[Feishu SDK] 获取表格字段列表: TABLE_ID={table_id}")
+            try:
+                req = ListAppTableFieldRequest.builder().table_id(table_id).build()
+                resp = token_or_client.base.v1.app_table_field.list(req)
+                if resp is None or resp.data is None:
+                    return []
+                items = []
+                for item in (resp.data.items or []):
+                    items.append({
+                        "field_name": getattr(item, 'field_name', ''),
+                        "type": getattr(item, 'type', ''),
+                    })
+                logger.info(f"[Feishu SDK] 表格共有 {len(items)} 个字段:")
+                for item in items:
+                    fn = item["field_name"]
+                    ft = item["type"]
+                    if field_map is not None:
+                        logger.info(f"  - 字段名: '{fn}', 类型: {ft}, "
+                                   f"代码映射: '{field_map.get(fn, '未映射')}'")
+                    else:
+                        logger.info(f"  - 字段名: '{fn}', 类型: {ft}")
+                if field_map is not None:
+                    unmapped = [it["field_name"] for it in items
+                               if it["field_name"] not in field_map]
+                    if unmapped:
+                        logger.warning(f"[Feishu SDK] 以下 {len(unmapped)} 个字段未映射: {unmapped}")
+                return items
+            except Exception as e:
+                logger.warning(f"[Feishu SDK] 获取字段列表异常: {e}")
+                return []
+
         cfg = config or self.config
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg['BASE_ID']}/tables/{table_id}/fields"
         headers = {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {token_or_client}",
             "Content-Type": "application/json",
         }
         logger.info(f"[Feishu] 获取表格字段列表: TABLE_ID={table_id}")
@@ -469,7 +538,7 @@ class FeishuSyncService:
         # 使用独立配置，不修改 self.config 以避免并行竞态
         cfg = EXPENSE_FEISHU_CONFIG
         try:
-            token = await self.get_tenant_access_token(config=cfg)
+            token = self._get_sdk_client(cfg)
         except Exception as e:
             logger.error(f"[Feishu] 同步失败 - 获取token失败: {e}")
             return {"success": False, "message": f"获取飞书token失败: {str(e)}", "created": 0, "updated": 0}
@@ -995,7 +1064,7 @@ class FeishuSyncService:
         cfg = EXPENSE_FEISHU_CONFIG
 
         try:
-            token = await self.get_tenant_access_token(config=cfg)
+            token = self._get_sdk_client(cfg)
         except Exception as e:
             logger.error(f"[Feishu] 人员绑定同步 - 获取token失败: {e}")
             return {"success": False, "message": f"获取飞书token失败: {str(e)}", "created": 0, "updated": 0}
@@ -1290,7 +1359,7 @@ class FeishuSyncService:
         cfg = EXPENSE_FEISHU_CONFIG
 
         try:
-            token = await self.get_tenant_access_token(config=cfg)
+            token = self._get_sdk_client(cfg)
         except Exception as e:
             return {"success": False, "message": f"获取token失败: {str(e)}", "created": 0, "updated": 0}
 
@@ -1419,7 +1488,7 @@ class FeishuSyncService:
         cfg = EXPENSE_FEISHU_CONFIG
 
         try:
-            token = await self.get_tenant_access_token(config=cfg)
+            token = self._get_sdk_client(cfg)
         except Exception as e:
             return {"success": False, "message": f"获取token失败: {str(e)}", "created": 0, "updated": 0}
 
@@ -1741,14 +1810,26 @@ class FeishuSyncService:
             "expense_code_created": created_ec,
         }
 
-    async def _fetch_all_records(self, token: str, table_id: str, config: Optional[Dict[str, Any]] = None,
+    async def _fetch_all_records(self, token_or_client, table_id: str, config: Optional[Dict[str, Any]] = None,
                                   date_field: Optional[str] = None, date_start: Optional[str] = None,
                                   date_end: Optional[str] = None,
                                   field_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """分页获取某张表格的所有记录（支持服务端日期过滤，大幅减少数据传输量）
+        """分页获取某张表格的所有记录（自动识别 HTTP token 或 SDK client）
+
+        当 token_or_client 为 BaseOpenSDK client 对象时，使用 SDK 方式读取（2 QPS 限频）；
+        当 token_or_client 为字符串时，使用 HTTP API 方式读取。
 
         field_names: 仅拉取业务所需字段，减小载荷。
         """
+        # ★ 检测是否为 BaseOpenSDK client 对象（有 base.config 属性）
+        if hasattr(token_or_client, 'base'):
+            return await self._fetch_all_records_sdk(
+                token_or_client, table_id,
+                date_field=date_field, date_start=date_start, date_end=date_end,
+                field_names=field_names,
+            )
+
+        # 原有 HTTP API 方式
         filter_formula = None
         if date_start and date_field:
             # 飞书API日期字段必须用 TODATE() 函数，不能直接用字符串
@@ -1761,7 +1842,7 @@ class FeishuSyncService:
         all_records = []
         page_token = None
         while True:
-            result = await self.get_bitable_records(token, table_id, page_token, config=config,
+            result = await self.get_bitable_records(token_or_client, table_id, page_token, config=config,
                                                     filter_formula=filter_formula, field_names=field_names)
             if result is None:
                 logger.error(f"[Feishu] 表格 {table_id} 返回空结果，终止分页")
@@ -1819,7 +1900,7 @@ class FeishuSyncService:
         result: Dict[str, Dict[str, str]] = {}
 
         try:
-            token = await self.get_tenant_access_token(config=cfg)
+            token = self._get_sdk_client(cfg)
         except Exception as e:
             logger.error(f"[Feishu] 获取token失败: {e}")
             return result
@@ -1921,6 +2002,110 @@ class FeishuSyncService:
 
         logger.info(f"[Feishu] 从飞书查询到 {len(result)} 条项目和试验需求记录")
         return result
+
+    # ═══════════════════════════════════════════════════════════════
+    # BaseOpenSDK 方式的数据读取（使用 PersonalBaseToken 鉴权）
+    # ═══════════════════════════════════════════════════════════════
+
+    def _get_sdk_client(self, config: Dict[str, Any] = None):
+        """创建 BaseOpenSDK client（使用 PersonalBaseToken 鉴权）。
+
+        优先从 config 读取，fallback 到 EXPENSE_FEISHU_CONFIG。
+        Raises ValueError: PERSONAL_BASE_TOKEN 或 BASE_ID 未配置
+        """
+        cfg = config or EXPENSE_FEISHU_CONFIG
+        personal_token = cfg.get("PERSONAL_BASE_TOKEN", "").strip()
+        app_token = cfg.get("BASE_ID", "").strip()
+        if not personal_token:
+            raise ValueError("PERSONAL_BASE_TOKEN 未配置，请在 EXPENSE_FEISHU_CONFIG 中填写")
+        if not app_token:
+            raise ValueError("BASE_ID 未配置")
+        return (
+            BaseClient.builder()
+            .app_token(app_token)
+            .personal_base_token(personal_token)
+            .build()
+        )
+
+    async def _fetch_all_records_sdk(
+        self,
+        client,
+        table_id: str,
+        date_field: Optional[str] = None,
+        date_start: Optional[str] = None,
+        date_end: Optional[str] = None,
+        field_names: Optional[List[str]] = None,
+        page_size: int = 500,
+    ) -> List[Dict[str, Any]]:
+        """使用 BaseOpenSDK 分页获取所有记录（遵守 2 QPS 限频）。
+
+        返回格式与 HTTP 方式完全一致：
+             {"record_id": str, "fields": dict}
+        """
+        # 构建 filter 公式（同时兼容 SDK）
+        filter_formula = None
+        if date_start and date_field:
+            cond = f'CurrentValue.[{date_field}] >= TODATE("{date_start}")'
+            if date_end:
+                cond += f' && CurrentValue.[{date_field}] < TODATE("{date_end}")'
+            filter_formula = cond
+            logger.info(f"[Feishu SDK] 使用服务端日期过滤: {filter_formula}")
+
+        all_records: List[Dict[str, Any]] = []
+        page_token = None
+        page_count = 0
+        t_start = time.time()
+
+        while True:
+            builder = (
+                ListAppTableRecordRequest.builder()
+                .table_id(table_id)
+                .page_size(page_size)
+            )
+            if page_token:
+                builder = builder.page_token(page_token)
+            if filter_formula:
+                builder = builder.filter(filter_formula)
+            if field_names:
+                builder = builder.field_names(field_names)
+
+            req = builder.build()
+            resp = client.base.v1.app_table_record.list(req)
+
+            if resp is None or resp.data is None:
+                logger.error(f"[Feishu SDK] 表格 {table_id} 返回空结果，终止分页")
+                break
+
+            data = resp.data
+            items = data.items or []
+
+            for item in items:
+                record_id = getattr(item, 'id', None) or getattr(item, 'record_id', '')
+                record_fields = getattr(item, 'fields', None) or {}
+                all_records.append({
+                    "record_id": record_id,
+                    "fields": record_fields,
+                })
+
+            page_count += 1
+            logger.debug(
+                f"[Feishu SDK] 表格 {table_id} 第 {page_count} 页: "
+                f"{len(items)} 条记录, has_more={data.has_more}"
+            )
+
+            if not data.has_more:
+                break
+            page_token = data.page_token
+
+            # 遵守 2 QPS 限频（每页间隔 0.6s，含安全余量）
+            await asyncio.sleep(0.6)
+
+        elapsed = time.time() - t_start
+        logger.info(
+            f"[Feishu SDK] 表格 {table_id} 拉取完成: "
+            f"{len(all_records)} 条记录, {page_count} 页, 耗时 {elapsed:.1f}s"
+        )
+        return all_records
 
 
 feishu_sync_service = FeishuSyncService()
