@@ -539,6 +539,12 @@ async function querySoftwarePackage(ecu, version) {
     const json = await res.json()
     if (json.code === 200 && json.data?.download_url) {
       softwarePkgState.value = { ...softwarePkgState.value, [key]: { status: 'found', downloadUrl: json.data.download_url, version } }
+      api.addOperationLog({
+        operation_type: '软件包查询',
+        target_vin: route.params.vin,
+        target_name: version,
+        operator: userStore.name || 'system',
+      })
     } else {
       softwarePkgState.value = { ...softwarePkgState.value, [key]: { status: 'notfound', downloadUrl: '', version } }
     }
@@ -547,7 +553,13 @@ async function querySoftwarePackage(ecu, version) {
   }
 }
 
-function downloadPackage(url) {
+function downloadPackage(url, version) {
+  api.addOperationLog({
+    operation_type: '软件包下载',
+    target_vin: route.params.vin,
+    target_name: version,
+    operator: userStore.name || 'system',
+  })
   window.open(url, '_blank')
 }
 
@@ -583,7 +595,7 @@ const pendingColumns = [
       if (state.status === 'found') {
         return h('a', {
           style: 'color: #18a058; cursor: pointer; font-size: 13px; text-decoration: underline',
-          onClick: () => downloadPackage(state.downloadUrl),
+          onClick: () => downloadPackage(state.downloadUrl, state.version),
         }, version)
       }
       return h('span', { style: 'color: #999; font-size: 12px' }, '未查询到该软件包')
