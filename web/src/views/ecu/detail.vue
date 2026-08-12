@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { h, onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NCard,
@@ -499,10 +499,9 @@ const allSummaryTableData = computed(() => {
 const pendingTableData = computed(() => {
   const data = []
   const results = compareResults.value
-  const hasBehind = Object.values(results).some((r) => r.reason === '落后')
   for (const [ecuName, result] of Object.entries(results)) {
     if (result.reason === '一致' || result.reason === '超前' || result.reason === '忽略') continue
-    if (result.reason === '本地无响应' && hasBehind) continue
+    if (result.reason === '本地无响应') continue
     const swDid = getDidForDescription('VOYAH SoftwareVersion')
     const ecuItem = ecuInfo.value[ecuName]
     const displayReason = result.reason === '本地无响应' ? '离线' : result.reason
@@ -526,11 +525,70 @@ function openPendingModal() {
   pendingModalVisible.value = true
 }
 
+const softwarePkgState = ref({})  // { ecuKey: { status: 'idle'|'found'|'notfound', downloadUrl: '', version: '' } }
+
+async function querySoftwarePackage(ecu, version) {
+  const key = ecu
+  softwarePkgState.value = { ...softwarePkgState.value, [key]: { status: 'loading', downloadUrl: '', version } }
+  try {
+    const res = await fetch('https://xuanwu-test.voyah.cn/mgapi/fm-alm/software/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ package_version: version }),
+    })
+    const json = await res.json()
+    if (json.code === 200 && json.data?.download_url) {
+      softwarePkgState.value = { ...softwarePkgState.value, [key]: { status: 'found', downloadUrl: json.data.download_url, version } }
+    } else {
+      softwarePkgState.value = { ...softwarePkgState.value, [key]: { status: 'notfound', downloadUrl: '', version } }
+    }
+  } catch {
+    softwarePkgState.value = { ...softwarePkgState.value, [key]: { status: 'notfound', downloadUrl: '', version } }
+  }
+}
+
+function downloadPackage(url) {
+  window.open(url, '_blank')
+}
+
 const summaryColumns = [
   { title: 'ECU', key: 'ecu' },
   { title: '当前ECU软件版本', key: 'currentVersion' },
   { title: '基线软件版本', key: 'baselineVersion' },
   { title: '软件版本对比结果', key: 'result' },
+]
+
+const pendingColumns = [
+  { title: 'ECU', key: 'ecu' },
+  { title: '当前ECU软件版本', key: 'currentVersion' },
+  { title: '基线软件版本', key: 'baselineVersion' },
+  { title: '软件版本对比结果', key: 'result' },
+  {
+    title: '软件包下载',
+    key: 'softwarePkg',
+    width: 180,
+    render: (row) => {
+      const state = softwarePkgState.value[row.ecu]
+      const version = row.baselineVersion
+      if (!version) return h('span', { style: 'color: #999; font-size: 12px' }, '-')
+      if (!state) {
+        return h('a', {
+          style: 'color: #18a058; cursor: pointer; font-size: 13px',
+          onClick: () => querySoftwarePackage(row.ecu, version),
+        }, '在玄武平台查询')
+      }
+      if (state.status === 'loading') {
+        return h('span', { style: 'color: #999; font-size: 12px' }, '查询中...')
+      }
+      if (state.status === 'found') {
+        return h('a', {
+          style: 'color: #18a058; cursor: pointer; font-size: 13px; text-decoration: underline',
+          onClick: () => downloadPackage(state.downloadUrl),
+        }, version)
+      }
+      return h('span', { style: 'color: #999; font-size: 12px' }, '未查询到该软件包')
+    },
+  },
 ]
 
 const onlineUpdateConfirmColumns = [
@@ -1226,11 +1284,11 @@ onMounted(() => {
       v-model:show="pendingModalVisible"
       preset="card"
       title="等待处理"
-      style="width: 800px; z-index: 1001"
+      style="width: 900px; z-index: 1001"
       :mask-closable="true"
     >
       <NDataTable
-        :columns="summaryColumns"
+        :columns="pendingColumns"
         :data="pendingTableData"
         :bordered="false"
         size="small"
