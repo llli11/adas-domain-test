@@ -30,6 +30,8 @@ const operationTypeOptions = [
   { label: '新建基线', value: '新建基线' },
   { label: '更新基线', value: '更新基线' },
   { label: '删除基线', value: '删除基线' },
+  { label: '软件包查询', value: '软件包查询' },
+  { label: '软件包下载', value: '软件包下载' },
 ]
 
 const filterParams = ref({
@@ -44,6 +46,8 @@ const operationTypeColors = {
   '新建基线': '#722ed1',
   '更新基线': '#faad14',
   '删除基线': '#eb2f96',
+  '软件包查询': '#13c2c2',
+  '软件包下载': '#2f54eb',
 }
 
 const maxChartValue = ref(1)
@@ -66,7 +70,10 @@ const columns = [
     key: 'target',
     width: '40%',
     resizable: true,
-    render: (row) => row.target_vin || row.target_name || '-',
+    render: (row) => {
+      if (row.target_vin && row.target_name) return `${row.target_vin} / ${row.target_name}`
+      return row.target_vin || row.target_name || '-'
+    },
   },
 ]
 
@@ -195,6 +202,8 @@ onMounted(() => {
                   '新建基线': day['新建基线'],
                   '更新基线': day['更新基线'],
                   '删除基线': day['删除基线'],
+                  '软件包查询': day['软件包查询'],
+                  '软件包下载': day['软件包下载'],
                 }"
                 :key="key"
               >
