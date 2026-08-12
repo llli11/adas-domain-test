@@ -341,7 +341,7 @@ async def get_operation_chart(days: int = 30) -> Dict[str, Any]:
     end_date = date.today()
     start_date = end_date - timedelta(days=days - 1)
 
-    operation_types = ["更新车辆", "对比基线", "删除车辆", "新建基线", "更新基线", "删除基线"]
+    operation_types = ["更新车辆", "对比基线", "删除车辆", "新建基线", "更新基线", "删除基线", "软件包查询", "软件包下载"]
 
     result = []
     for i in range(days):
