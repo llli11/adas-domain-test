@@ -1,0 +1,56 @@
+-- MySQL dump 10.13  Distrib 8.0.45, for Win64 (x86_64)
+--
+-- Host: 10.82.77.87    Database: mydb_local
+-- ------------------------------------------------------
+-- Server version	8.0.46
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `t_release_target_info`
+--
+
+DROP TABLE IF EXISTS `t_release_target_info`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `t_release_target_info` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `target_name` varchar(100) NOT NULL,
+  `ecu_info` json DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `target_name` (`target_name`),
+  KEY `idx_t_release_t_target__104fb6` (`target_name`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `t_release_target_info`
+--
+
+LOCK TABLES `t_release_target_info` WRITE;
+/*!40000 ALTER TABLE `t_release_target_info` DISABLE KEYS */;
+INSERT INTO `t_release_target_info` VALUES (1,'H77B-ET','{\"DG\": {\"F189\": \"H77A6203005AB\"}, \"GL\": {\"F189\": \"H77A3604876AD\"}, \"KK\": {\"F189\": \"H77B3720034AA\"}, \"PS\": {\"F189\": \"H97N7912020AA\"}, \"ACU\": {\"F189\": \"H77A3607802AF\"}, \"AMP\": {\"F189\": \"H77A7909023AJ\"}, \"CDC\": {\"F189\": \"H97N3631921CP\"}, \"CRF\": {\"F189\": \"H56D8213802AQ\"}, \"DKC\": {\"F189\": \"H97N3609873AK\"}, \"EFP\": {\"F189\": \"H77A5006804AM\"}, \"EMS\": {\"F189\": \"H77A3601812BJ\"}, \"ETC\": {\"F189\": \"H53A3629841AF\"}, \"HSG\": {\"F189\": \"SPAA3615826DC\"}, \"ISC\": {\"F189\": \"H77A3614825AL\"}, \"ITL\": {\"F189\": \"H77A3604844BF\"}, \"OBC\": {\"F189\": \"H56D3619874AM\"}, \"PNG\": {\"F189\": \"H37B3725004AL\"}, \"POT\": {\"F189\": \"H77A3605802AJ\"}, \"RLS\": {\"F189\": \"H37N3602805AA\"}, \"SWM\": {\"F189\": \"H47A3612808AA\"}, \"VCM\": {\"F189\": \"H77B3632823AB\"}, \"AMP2\": {\"F189\": \"H77A7909035AE\"}, \"CMCS\": {\"F189\": \"H77A7912814AN\"}, \"LBMS\": {\"F189\": \"H56C3703002AC\"}, \"ODRC\": {\"F189\": \"H77A3605017AN\"}, \"TMCF\": {\"F189\": \"H77B3615823AB\"}, \"IL_AD\": {\"F189\": \"H77A5500004AF\"}, \"RSB_D\": {\"F189\": \"H67A8212029AE\"}, \"SCURL\": {\"F189\": \"H77A3608811AV\"}, \"SCURR\": {\"F189\": \"H77A3608814AV\"}, \"SCUTR\": {\"F189\": \"H77A3608843AN\"}, \"ARP_RL\": {\"F189\": \"H77A7912817AR\"}, \"ARP_RR\": {\"F189\": \"H77A7912822AR\"}, \"AR_HUD\": {\"F189\": \"H77A3620826AL\"}, \"DCU_FL\": {\"F189\": \"H77A3605823AS\"}, \"DCU_FR\": {\"F189\": \"H77A3605832AS\"}, \"DCU_RL\": {\"F189\": \"H77A3605832AS\"}, \"DCU_RR\": {\"F189\": \"H77A3605832AS\"}, \"EPS_EV\": {\"F189\": \"H97N3612802AC\"}, \"EPS_L3\": {\"F189\": \"H77A3612803BE\"}, \"HCM_L1\": {\"F189\": \"H77A3604880AC\"}, \"HCM_R1\": {\"F189\": \"H77A3604884AC\"}, \"IPB_EV\": {\"F189\": \"H97N3617808AB\"}, \"IPB_L3\": {\"F189\": \"H77A3617005AF\"}, \"POD_FL\": {\"F189\": \"H77A3605005AP\"}, \"POD_FR\": {\"F189\": \"H77A3605008AP\"}, \"POD_RL\": {\"F189\": \"H77A3605011AP\"}, \"POD_RR\": {\"F189\": \"H77A3605014AP\"}, \"RBU_L3\": {\"F189\": \"H77A3617010AF\"}, \"SWS_L3\": {\"F189\": \"H77A3612805AG\"}, \"VIU_ML\": {\"F189\": \"H77A3631809BG\"}, \"VIU_MR\": {\"F189\": \"H77A3631811BG\"}, \"WCM_FL\": {\"F189\": \"H77A3609817AL\"}, \"WCM_FR\": {\"F189\": \"H77A3609008AK\"}, \"WSM_FR\": {\"F189\": \"H77A3608032AJ\"}, \"EOPF_EV\": {\"F189\": \"H67A3621842AB\"}, \"EOPR_EV\": {\"F189\": \"H47A3621834AD\"}, \"MCUF_EV\": {\"F189\": \"H47A3621802AC\"}, \"MCUR_EV\": {\"F189\": \"H47A3621816AH\"}, \"SCCS/CS\": {\"F189\": \"H97N7912015AA\"}, \"WSM2_FL\": {\"F189\": \"H77A3608029AK\"}, \"WSM2_FR\": {\"F189\": \"H77A3608035AD\"}, \"WSM2_RL\": {\"F189\": \"H77A3608041AF\"}, \"WSM2_RR\": {\"F189\": \"H77A3608047AK\"}, \"WSM_FL1\": {\"F189\": \"H77A3608048AM\"}, \"WSM_RL1\": {\"F189\": \"H77A3608049AG\"}, \"WSM_RR1\": {\"F189\": \"H77A3608050AK\"}, \"EIL_Logo\": {\"F189\": \"H77A3925013AL\"}, \"EPB_L_EV\": {\"F189\": \"H97N3502802AK\"}, \"EPB_R_EV\": {\"F189\": \"H97N3502807AK\"}, \"EPS_PHEV\": {\"F189\": \"H77A3612802AE\"}, \"IPB_PHEV\": {\"F189\": \"H77A3617808AP\"}, \"RLLM_Fix\": {\"F189\": \"H77A3604832AF\"}, \"RLM_Move\": {\"F189\": \"H77A3604835AF\"}, \"RRLM_Fix\": {\"F189\": \"H77A3604838AF\"}, \"T_BOX_L3\": {\"F189\": \"H77B3630849BA\"}, \"_did_map\": {\"F189\": \"VOYAH SoftwareVersion\"}, \"EOPF_PHEV\": {\"F189\": \"H77A3621014AC\"}, \"EOPR_PHEV\": {\"F189\": \"H77A3621838HB\"}, \"MCUF_PHEV\": {\"F189\": \"H77A3700016AG\"}, \"MCUR_PHEV\": {\"F189\": \"H77A3621837HM\"}, \"EPB_L_PHEV\": {\"F189\": \"H77A3502802AF\"}, \"EPB_R_PHEV\": {\"F189\": \"H77A3502807AF\"}, \"RWS_域磐\": {\"F189\": \"H77A3612822AH\"}, \"BMS_宁德_BEV10A\": {\"F189\": \"H56E3619020AC\"}, \"BMS_宁德_PHEV06B\": {\"F189\": \"H77A3619895AS\"}}','2026-07-07 16:05:49.780496','2026-07-07 16:05:49.780566'),(2,'H77B-PPC','{\"DG\": {\"F189\": \"H77A6203005AB\"}, \"GL\": {\"F189\": \"H77A3604876AD\"}, \"IC\": {\"F189\": \"H67A3820004AA\"}, \"KK\": {\"F189\": \"H77B3720034AA\"}, \"PS\": {\"F189\": \"H97N7912020AC\"}, \"ACU\": {\"F189\": \"H77A3607802AG\"}, \"AMP\": {\"F189\": \"H77B7909023AB\"}, \"CDC\": {\"F189\": \"H77B3631921AE\"}, \"CRF\": {\"F189\": \"H56N8213802AB\"}, \"DKC\": {\"F189\": \"H97N3609873AM\"}, \"EFP\": {\"F189\": \"H77A5006804AP\"}, \"ETC\": {\"F189\": \"H53A3629841AF\"}, \"FCU\": {\"F189\": \"H77B3605020AA\"}, \"HSG\": {\"F189\": \"SPAA3615826DF\"}, \"ISC\": {\"F189\": \"H97N3614825AE\"}, \"ITL\": {\"F189\": \"H77A3604844BF\"}, \"MDC\": {\"F189\": \"H67A3629168DC\"}, \"OBC\": {\"F189\": \"H56D3619874AM\"}, \"PNG\": {\"F189\": \"H37B3725004AL\"}, \"POT\": {\"F189\": \"H77A3605802AJ\"}, \"RLS\": {\"F189\": \"H37N3602805AA\"}, \"SWM\": {\"F189\": \"H47A3612808AB\"}, \"SWS\": {\"F189\": \"H77A3612008AC\"}, \"VCM\": {\"F189\": \"H77B3632823BB\"}, \"AMP2\": {\"F189\": \"H77A7909035AG\"}, \"CMCS\": {\"F189\": \"H77A7912814AP\"}, \"ODRC\": {\"F189\": \"H77A3605017AP\"}, \"TMCF\": {\"F189\": \"H77B3615823AB\"}, \"RSB_D\": {\"F189\": \"H67A8212029AH\"}, \"SCURL\": {\"F189\": \"H77B3608811BA\"}, \"SCURR\": {\"F189\": \"H77A3608814AW\"}, \"SCUTR\": {\"F189\": \"H77B3608843AA\"}, \"T_BOX\": {\"F189\": \"H77B3630849BA\"}, \"ARP_RL\": {\"F189\": \"H77A7912817AT\"}, \"ARP_RR\": {\"F189\": \"H77A7912822AT\"}, \"AR_HUD\": {\"F189\": \"H77A3620826AM\"}, \"DCU_FL\": {\"F189\": \"H77A3605823AS\"}, \"DCU_FR\": {\"F189\": \"H77A3605823AS\"}, \"DCU_RL\": {\"F189\": \"H77A3605832AS\"}, \"DCU_RR\": {\"F189\": \"H77A3605832AS\"}, \"EPS_EV\": {\"F189\": \"H97N3612802AC\"}, \"HCM_L1\": {\"F189\": \"H77A3604880AC\"}, \"HCM_R1\": {\"F189\": \"H77A3604884AC\"}, \"IPB_EV\": {\"F189\": \"H97N3617808CA\"}, \"POD_FL\": {\"F189\": \"H77A3605005AQ\"}, \"POD_FR\": {\"F189\": \"H77A3605008AQ\"}, \"POD_RL\": {\"F189\": \"H77A3605011AQ\"}, \"POD_RR\": {\"F189\": \"H77A3605014AQ\"}, \"VIU_ML\": {\"F189\": \"H77B3631809AC\"}, \"VIU_MR\": {\"F189\": \"H77B3631811AC\"}, \"WCM_FL\": {\"F189\": \"H77A3609817AM\"}, \"WCM_FR\": {\"F189\": \"H77A3609008AK\"}, \"WSM_FR\": {\"F189\": \"H77A3608032AJ\"}, \"EOPF_EV\": {\"F189\": \"H67A3621842AC\"}, \"EOPR_EV\": {\"F189\": \"H47A3621834AE\"}, \"MCUF_EV\": {\"F189\": \"H47A3621802AH\"}, \"MCUR_EV\": {\"F189\": \"H47A3621816AL\"}, \"SCCS/CS\": {\"F189\": \"H97N7912015AC\"}, \"WSM2_FL\": {\"F189\": \"H77A3608029AK\"}, \"WSM2_FR\": {\"F189\": \"H77A3608035AD\"}, \"WSM2_RL\": {\"F189\": \"H77A3608041AF\"}, \"WSM2_RR\": {\"F189\": \"H77A3608047AK\"}, \"WSM_FL1\": {\"F189\": \"H77A3608048AM\"}, \"WSM_RL1\": {\"F189\": \"H77A3608049AG\"}, \"WSM_RR1\": {\"F189\": \"H77A3608050AK\"}, \"EIL_Logo\": {\"F189\": \"H77A3925013AM\"}, \"EPB_L_EV\": {\"F189\": \"H67A3502816AA\"}, \"EPB_R_EV\": {\"F189\": \"H67A3502819AA\"}, \"RLLM_Fix\": {\"F189\": \"H77A3604832AF\"}, \"RLM_Move\": {\"F189\": \"H77A3604835AF\"}, \"RRLM_Fix\": {\"F189\": \"H77A3604838AF\"}, \"_did_map\": {\"F189\": \"VOYAH SoftwareVersion\"}, \"RWS_域磐\": {\"F189\": \"H77A3612822AH\"}, \"LBMS_3003AG\": {\"F189\": \"H56C3703800AL\"}, \"LBMS_3005AB\": {\"F189\": \"H56C3703002AD\"}, \"BMS_宁德_BEV10A\": {\"F189\": \"H56E3619020AF\"}}','2026-07-27 10:25:51.761571','2026-07-27 10:25:51.761607');
+/*!40000 ALTER TABLE `t_release_target_info` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-08-13 10:15:27
